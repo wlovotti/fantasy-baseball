@@ -55,10 +55,13 @@ def fetch_yahoo_players(league) -> pd.DataFrame:
         if not batch:
             break
         for p in batch:
+            eligible = p.get("eligible_positions", "")
+            if isinstance(eligible, list):
+                eligible = ",".join(eligible)
             players.append({
                 "yahoo_id": p["player_id"],
                 "yahoo_name": p["name"],
-                "position": p.get("eligible_positions", ""),
+                "position": eligible,
             })
         start += 25
 
