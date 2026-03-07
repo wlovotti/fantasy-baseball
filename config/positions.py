@@ -62,6 +62,7 @@ FANGRAPHS_POSITION_MAP: dict[str, list[Position]] = {
     "CF": [Position.OF],
     "RF": [Position.OF],
     "DH": [Position.UTIL],
+    "Util": [Position.UTIL],
     "SP": [Position.P],
     "RP": [Position.P],
 }

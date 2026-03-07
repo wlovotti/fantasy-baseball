@@ -1,11 +1,18 @@
 """Yahoo Fantasy league discovery and player ID matching."""
 
+from __future__ import annotations
+
 import os
+import re
 
 import pandas as pd
 from rapidfuzz import fuzz, process
 
 from yahoo.auth import get_yahoo_auth
+
+
+# Yahoo appends role suffixes for dual-eligible players (e.g. Ohtani)
+_YAHOO_NAME_SUFFIX_RE = re.compile(r"\s*\((?:Batter|Pitcher)\)\s*$")
 
 
 def get_league():
@@ -34,36 +41,128 @@ def get_league():
         raise ValueError("YAHOO_LEAGUE_ID must be set in .env.")
 
     game = yfa.Game(oauth, game_key)
-    league = game.to_league(league_id)
+    full_league_key = f"{game.game_id()}.l.{league_id}"
+    league = game.to_league(full_league_key)
     return league
 
 
-def fetch_yahoo_players(league) -> pd.DataFrame:
+def _normalize_yahoo_name(name: str) -> str:
+    """Strip Yahoo role suffixes like '(Batter)' or '(Pitcher)' from names."""
+    return _YAHOO_NAME_SUFFIX_RE.sub("", name)
+
+
+def _parse_search_results(raw: dict) -> list[dict]:
+    """Parse players from a Yahoo search API response.
+
+    Args:
+        raw: Raw JSON response from the Yahoo search endpoint.
+
+    Returns:
+        List of player dicts with player_id, name, and eligible_positions.
+    """
+    players_data = raw.get("fantasy_content", {}).get("league", [{}])[1]
+    if not isinstance(players_data, dict) or "players" not in players_data:
+        return []
+
+    results = []
+    players_section = players_data["players"]
+    for key in players_section:
+        if key == "count":
+            continue
+        try:
+            player_info = players_section[key]["player"][0]
+            pid = player_info[1]["player_id"]
+            name = player_info[2]["name"]["full"]
+            # Extract eligible positions from the raw data
+            positions = []
+            for item in player_info:
+                if isinstance(item, dict) and "eligible_positions" in item:
+                    for pos_entry in item["eligible_positions"]:
+                        if isinstance(pos_entry, dict) and "position" in pos_entry:
+                            positions.append(pos_entry["position"])
+                    break
+            if not positions:
+                for item in player_info:
+                    if isinstance(item, dict) and "display_position" in item:
+                        positions = [item["display_position"]]
+                        break
+            results.append({
+                "player_id": pid,
+                "name": name,
+                "eligible_positions": positions,
+            })
+        except (KeyError, IndexError):
+            continue
+    return results
+
+
+def fetch_yahoo_players(league, search_names: list[str] | None = None) -> pd.DataFrame:
     """Fetch all players from the Yahoo league with their Yahoo IDs.
+
+    Combines available players (batters + pitchers) and taken players.
+    Optionally searches for specific player names to catch players with
+    synthetic IDs (e.g. Ohtani's split batter/pitcher entries) that don't
+    appear in normal player listings.
 
     Args:
         league: A yahoo_fantasy_api League object.
+        search_names: Optional list of player last names to search for
+            via the Yahoo search API, catching players missed by the
+            normal listing endpoints.
 
     Returns:
         DataFrame with columns: yahoo_id, yahoo_name, position.
     """
+    seen_ids = set()
     players = []
-    # Yahoo paginates player lists in chunks of 25
-    start = 0
-    while True:
-        batch = league.player_list(start=start)
-        if not batch:
-            break
+
+    def _add_player(pid, name, eligible):
+        """Add a player to the list if not already seen."""
+        if pid in seen_ids:
+            return
+        seen_ids.add(pid)
+        if isinstance(eligible, list):
+            eligible = ",".join(eligible)
+        players.append({
+            "yahoo_id": pid,
+            "yahoo_name": _normalize_yahoo_name(name),
+            "position": eligible,
+        })
+
+    # Use _fetch_players with status 'A' (all available = FA + waivers)
+    # for both batters and pitchers, plus taken players.
+    # This works in pre-draft when free_agents() may return empty.
+    sources = [
+        league._fetch_players("A", position="B"),
+        league._fetch_players("A", position="P"),
+        league.taken_players(),
+    ]
+    for batch in sources:
         for p in batch:
-            eligible = p.get("eligible_positions", "")
-            if isinstance(eligible, list):
-                eligible = ",".join(eligible)
-            players.append({
-                "yahoo_id": p["player_id"],
-                "yahoo_name": p["name"],
-                "position": eligible,
-            })
-        start += 25
+            _add_player(
+                p["player_id"],
+                p["name"],
+                p.get("eligible_positions", []),
+            )
+
+    # Search for specific players that may not appear in normal listings
+    # (e.g. dual-eligible players like Ohtani with synthetic IDs)
+    if search_names:
+        for name in search_names:
+            try:
+                raw = league.yhandler.get(
+                    "league/{}/players;search={}/percent_owned".format(
+                        league.league_id, name
+                    )
+                )
+                for p in _parse_search_results(raw):
+                    _add_player(
+                        p["player_id"],
+                        p["name"],
+                        p.get("eligible_positions", []),
+                    )
+            except Exception:
+                continue
 
     return pd.DataFrame(players)
 
