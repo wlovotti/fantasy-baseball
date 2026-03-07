@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=64.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fantasy-baseball"
+version = "0.1.0"
+description = "Fantasy baseball auction draft toolkit with valuation engine and live draft tracker"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.24",
+    "jinja2>=3.1",
+    "pandas>=1.5",
+    "numpy>=1.23",
+    "yahoo-fantasy-api>=2.5",
+    "rapidfuzz>=3.5",
+    "pydantic>=2.5",
+    "click>=8.1",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.25",
+]
+
+[tool.setuptools.packages.find]
+include = ["config*", "data*", "valuation*", "yahoo*", "draft*"]
