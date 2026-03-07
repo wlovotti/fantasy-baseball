@@ -78,7 +78,7 @@ class TestMergeYahooPositions:
 
     def test_matched_hitters_get_yahoo_positions(self, hitters_df, yahoo_df):
         """Matched hitters should get Yahoo position eligibility."""
-        result = merge_yahoo_positions(hitters_df, yahoo_df, score_threshold=80)
+        result, unmatched = merge_yahoo_positions(hitters_df, yahoo_df, score_threshold=80)
 
         # Mike Trout: CF,DH -> OF, Util
         trout = result[result["name"] == "Mike Trout"].iloc[0]
@@ -92,9 +92,10 @@ class TestMergeYahooPositions:
 
     def test_unmatched_hitters_get_util(self, hitters_df, yahoo_df):
         """Unmatched hitters should fall back to UTIL."""
-        result = merge_yahoo_positions(hitters_df, yahoo_df, score_threshold=80)
+        result, unmatched = merge_yahoo_positions(hitters_df, yahoo_df, score_threshold=80)
         unknown = result[result["name"] == "Unknown Player"].iloc[0]
         assert unknown["positions"] == [Position.UTIL]
+        assert "Unknown Player" in unmatched
 
     def test_pitchers_unaffected(self):
         """Pitchers should keep [Position.P] regardless of Yahoo data."""

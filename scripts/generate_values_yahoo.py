@@ -26,7 +26,7 @@ def merge_yahoo_positions(
     hitters: pd.DataFrame,
     yahoo_df: pd.DataFrame,
     score_threshold: int = 90,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, list[str]]:
     """Replace hitter positions with Yahoo eligibility via fuzzy matching.
 
     Matched hitters get their Yahoo position eligibility parsed into Position
@@ -38,10 +38,22 @@ def merge_yahoo_positions(
         score_threshold: Minimum fuzzy match score (0-100) to accept.
 
     Returns:
-        Hitters DataFrame with updated positions from Yahoo.
+        Tuple of (updated hitters DataFrame, list of unmatched player names).
     """
-    yahoo_names = yahoo_df["yahoo_name"].tolist()
-    yahoo_pos_map = dict(zip(yahoo_df["yahoo_name"], yahoo_df["position"]))
+    if yahoo_df.empty:
+        click.echo("  Warning: No Yahoo players found, keeping default positions")
+        return hitters, hitters["name"].tolist()
+
+    # Build name→position map, preferring non-pitcher entries for hitters.
+    # Yahoo lists dual players like Ohtani twice (Batter + Pitcher) with the
+    # same normalized name; we want the batter entry when matching hitters.
+    yahoo_pos_map: dict[str, str] = {}
+    for _, yrow in yahoo_df.iterrows():
+        name = yrow["yahoo_name"]
+        pos = yrow["position"]
+        if name not in yahoo_pos_map or yahoo_pos_map[name] == "P":
+            yahoo_pos_map[name] = pos
+    yahoo_names = list(yahoo_pos_map.keys())
 
     from rapidfuzz import fuzz, process
 
@@ -74,7 +86,7 @@ def merge_yahoo_positions(
         if len(unmatched_names) > 10:
             click.echo(f"    ... and {len(unmatched_names) - 10} more")
 
-    return hitters
+    return hitters, unmatched_names
 
 
 @click.command()
@@ -120,9 +132,22 @@ def main(
     yahoo_df = fetch_yahoo_players(league)
     click.echo(f"  Fetched {len(yahoo_df)} players from Yahoo")
 
-    # Merge Yahoo positions into hitters
+    # First pass: merge Yahoo positions into hitters
     click.echo("Matching hitter positions from Yahoo...")
-    hitters = merge_yahoo_positions(hitters, yahoo_df, score_threshold=threshold)
+    hitters, unmatched_names = merge_yahoo_positions(
+        hitters, yahoo_df, score_threshold=threshold
+    )
+
+    # Second pass: search Yahoo for unmatched hitters (catches dual-eligible
+    # players like Ohtani who have synthetic IDs)
+    if unmatched_names:
+        last_names = list({n.split()[-1] for n in unmatched_names})
+        click.echo(f"Searching Yahoo for {len(last_names)} unmatched last names...")
+        yahoo_df = fetch_yahoo_players(league, search_names=last_names)
+        click.echo(f"  Player pool now {len(yahoo_df)} after search")
+        hitters, still_unmatched = merge_yahoo_positions(
+            hitters, yahoo_df, score_threshold=threshold
+        )
 
     # Combine and calculate points
     all_players = pd.concat([hitters, pitchers], ignore_index=True)
