@@ -62,6 +62,8 @@ FANGRAPHS_POSITION_MAP: dict[str, list[Position]] = {
     "CF": [Position.OF],
     "RF": [Position.OF],
     "DH": [Position.UTIL],
+    "SP": [Position.P],
+    "RP": [Position.P],
 }
 
 
@@ -77,8 +79,8 @@ def parse_positions(position_str: str) -> list[Position]:
         if part in FANGRAPHS_POSITION_MAP:
             positions.update(FANGRAPHS_POSITION_MAP[part])
 
-    # All hitters are Util-eligible
-    if positions:
+    # All hitters are Util-eligible; pitchers are not
+    if positions and positions != {Position.P}:
         positions.add(Position.UTIL)
 
     return sorted(positions, key=lambda p: list(Position).index(p))
