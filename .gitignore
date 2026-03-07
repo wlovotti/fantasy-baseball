@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Data cache
+data/cache/*.csv
+
+# Yahoo OAuth tokens
+oauth2.json
+token.json
+
+# Draft state auto-saves
+draft_state.json
+draft_state_backup.json
+
+# Output files
+output/
+*.output.csv
+
+# OS
+.DS_Store
+Thumbs.db

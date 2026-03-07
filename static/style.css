@@ -1,0 +1,275 @@
+/* Fantasy Baseball Draft Tracker */
+
+:root {
+    --bg: #1a1a2e;
+    --surface: #16213e;
+    --surface-alt: #0f3460;
+    --primary: #e94560;
+    --accent: #00d2ff;
+    --text: #eee;
+    --text-muted: #999;
+    --positive: #4caf50;
+    --negative: #f44336;
+    --border: #2a2a4a;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+}
+
+header {
+    background: var(--surface);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    border-bottom: 2px solid var(--primary);
+    flex-wrap: wrap;
+}
+
+header h1 {
+    font-size: 1.3rem;
+    color: var(--primary);
+}
+
+#inflation-badge {
+    background: var(--surface-alt);
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+#inflation-value { color: var(--accent); font-weight: bold; }
+
+#draft-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 16px;
+}
+
+/* Draft Input */
+#draft-input {
+    background: var(--surface);
+    padding: 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+}
+
+#draft-input h2 { font-size: 1rem; margin-bottom: 8px; }
+
+.form-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.form-group label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.form-group input,
+.form-group select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.autocomplete-wrapper {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+}
+
+.autocomplete-items {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0 0 4px 4px;
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 100;
+    display: none;
+}
+
+.autocomplete-items.active { display: block; }
+
+.autocomplete-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.selected {
+    background: var(--surface-alt);
+}
+
+.autocomplete-item .pos { color: var(--text-muted); }
+.autocomplete-item .val { color: var(--accent); }
+
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.btn-primary {
+    background: var(--primary);
+    color: white;
+}
+
+.btn-primary:hover { opacity: 0.9; }
+
+.btn-secondary {
+    background: var(--surface-alt);
+    color: var(--text);
+    margin-top: 8px;
+}
+
+.btn-secondary:hover { background: var(--border); }
+
+/* Main Grid */
+.main-grid {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 16px;
+}
+
+@media (max-width: 900px) {
+    .main-grid { grid-template-columns: 1fr; }
+}
+
+/* Player Table */
+#player-table-section {
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+#player-table-section h2 { font-size: 1rem; margin-bottom: 8px; }
+
+.table-controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.table-controls input,
+.table-controls select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.table-controls input { flex: 1; }
+
+.table-wrapper {
+    max-height: 65vh;
+    overflow-y: auto;
+}
+
+#player-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+#player-table th {
+    position: sticky;
+    top: 0;
+    background: var(--surface-alt);
+    padding: 6px 8px;
+    text-align: left;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+#player-table td {
+    padding: 5px 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+#player-table tr:hover { background: rgba(233, 69, 96, 0.08); }
+
+.val-up { color: var(--positive); }
+.val-down { color: var(--negative); }
+.val-neutral { color: var(--text-muted); }
+
+/* Sidebar */
+#sidebar { display: flex; flex-direction: column; gap: 16px; }
+
+#team-budgets,
+#recent-picks {
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+#team-budgets h2,
+#recent-picks h2 {
+    font-size: 1rem;
+    margin-bottom: 8px;
+}
+
+.team-budget-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 0.82rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.team-budget-row .budget { color: var(--accent); }
+.team-budget-row .roster-count { color: var(--text-muted); }
+
+.pick-row {
+    padding: 4px 0;
+    font-size: 0.82rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+}
+
+.pick-row .pick-price { color: var(--primary); font-weight: 600; }
