@@ -167,20 +167,52 @@ def fetch_yahoo_players(league, search_names: list[str] | None = None) -> pd.Dat
     return pd.DataFrame(players)
 
 
+def _fuzzy_match_name(
+    name: str,
+    yahoo_names: list[str],
+    yahoo_id_map: dict[str, str],
+    score_threshold: int,
+) -> tuple[str | None, float]:
+    """Fuzzy match a single player name against Yahoo names.
+
+    Args:
+        name: Player name to match.
+        yahoo_names: List of Yahoo player names to match against.
+        yahoo_id_map: Mapping from Yahoo name to Yahoo player ID.
+        score_threshold: Minimum fuzzy match score (0-100) to accept.
+
+    Returns:
+        Tuple of (yahoo_id or None, match_score).
+    """
+    result = process.extractOne(
+        name, yahoo_names, scorer=fuzz.token_sort_ratio
+    )
+    if result and result[1] >= score_threshold:
+        return yahoo_id_map[result[0]], result[1]
+    return None, result[1] if result else 0
+
+
 def match_players(
     values_df: pd.DataFrame,
     yahoo_df: pd.DataFrame,
     score_threshold: int = 90,
+    league=None,
 ) -> pd.DataFrame:
     """Fuzzy match valued players to Yahoo player IDs.
 
     Uses rapidfuzz token_sort_ratio for robust name matching that handles
     name order differences and minor spelling variations.
 
+    When a league object is provided, unmatched players trigger a second
+    pass that searches Yahoo by last name. This catches players not in the
+    normal FA/taken pools (e.g. NA-status prospects, dual-eligible entries).
+
     Args:
         values_df: DataFrame with 'name' column from valuations.
         yahoo_df: DataFrame with 'yahoo_name' and 'yahoo_id' from Yahoo.
         score_threshold: Minimum fuzzy match score (0-100) to accept.
+        league: Optional Yahoo league object for fallback search of
+            unmatched players.
 
     Returns:
         values_df with 'yahoo_id' and 'match_score' columns added.
@@ -195,18 +227,38 @@ def match_players(
 
     for _, row in values_df.iterrows():
         name = row["name"]
-        result = process.extractOne(
-            name, yahoo_names, scorer=fuzz.token_sort_ratio
+        yahoo_id, score = _fuzzy_match_name(
+            name, yahoo_names, yahoo_id_map, score_threshold
+        )
+        matched_ids.append(yahoo_id)
+        match_scores.append(score)
+        if yahoo_id is None:
+            unmatched.append(name)
+
+    # Second pass: search Yahoo for unmatched players by last name,
+    # expanding the pool with NA-status and other missing players.
+    if unmatched and league is not None:
+        last_names = list({n.split()[-1] for n in unmatched})
+        expanded_df = fetch_yahoo_players(league, search_names=last_names)
+        expanded_names = expanded_df["yahoo_name"].tolist()
+        expanded_id_map = dict(
+            zip(expanded_df["yahoo_name"], expanded_df["yahoo_id"])
         )
 
-        if result and result[1] >= score_threshold:
-            matched_name = result[0]
-            matched_ids.append(yahoo_id_map[matched_name])
-            match_scores.append(result[1])
-        else:
-            matched_ids.append(None)
-            match_scores.append(result[1] if result else 0)
-            unmatched.append(name)
+        still_unmatched = []
+        for i, (_, row) in enumerate(values_df.iterrows()):
+            if matched_ids[i] is not None:
+                continue
+            name = row["name"]
+            yahoo_id, score = _fuzzy_match_name(
+                name, expanded_names, expanded_id_map, score_threshold
+            )
+            if yahoo_id is not None:
+                matched_ids[i] = yahoo_id
+                match_scores[i] = score
+            else:
+                still_unmatched.append(name)
+        unmatched = still_unmatched
 
     values_df = values_df.copy()
     values_df["yahoo_id"] = matched_ids

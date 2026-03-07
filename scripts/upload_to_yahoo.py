@@ -34,7 +34,7 @@ def main(values_csv: str, dry_run: bool, threshold: int) -> None:
     click.echo(f"  {len(yahoo_df)} Yahoo players")
 
     click.echo("Matching players...")
-    matched = match_players(values_df, yahoo_df, score_threshold=threshold)
+    matched = match_players(values_df, yahoo_df, score_threshold=threshold, league=league)
     n_matched = matched["yahoo_id"].notna().sum()
     click.echo(f"  {n_matched}/{len(values_df)} players matched")
 
