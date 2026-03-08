@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import pandas as pd
 
-from config.league import LEAGUE
+from config.league import LEAGUE, LeagueSettings
 from config.positions import POSITION_SLOTS, Position
 
 
 def calculate_replacement_levels(
     df: pd.DataFrame,
+    league: LeagueSettings = LEAGUE,
 ) -> dict[Position, float]:
     """Calculate replacement-level points for each position.
 
@@ -24,6 +25,7 @@ def calculate_replacement_levels(
 
     Args:
         df: Player DataFrame with 'points', 'positions', and 'player_type' columns.
+        league: League settings controlling roster construction and bench allocation.
 
     Returns:
         Dictionary mapping each Position to its replacement-level points value.
@@ -47,7 +49,7 @@ def calculate_replacement_levels(
     slots = dict(POSITION_SLOTS.slots)
 
     # Add bench slots proportionally
-    slots_with_bench = _add_bench_slots(slots)
+    slots_with_bench = _add_bench_slots(slots, league=league)
 
     # Track how many slots remain and who was the last assigned at each position
     remaining = dict(slots_with_bench)
@@ -73,20 +75,24 @@ def calculate_replacement_levels(
     return last_assigned
 
 
-def _add_bench_slots(slots: dict[Position, int]) -> dict[Position, int]:
+def _add_bench_slots(
+    slots: dict[Position, int],
+    league: LeagueSettings = LEAGUE,
+) -> dict[Position, int]:
     """Add estimated bench slots to position slot counts.
 
     Bench hitters go to Util (best available hitter), bench pitchers to P.
 
     Args:
         slots: Base position slot counts.
+        league: League settings for bench allocation.
 
     Returns:
         Updated slot counts with bench allocation.
     """
     result = dict(slots)
-    result[Position.UTIL] = result.get(Position.UTIL, 0) + LEAGUE.bench_hitting_estimate
-    result[Position.P] = result.get(Position.P, 0) + LEAGUE.bench_pitching_estimate
+    result[Position.UTIL] = result.get(Position.UTIL, 0) + league.bench_hitting_estimate
+    result[Position.P] = result.get(Position.P, 0) + league.bench_pitching_estimate
     return result
 
 

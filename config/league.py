@@ -1,6 +1,9 @@
 """League constants: team count, budget, and roster construction."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -25,6 +28,19 @@ class LeagueSettings:
 
     # Bench
     bench: int = 4
+
+    # Per-team bench hitters, calibrated from 3 seasons of draft history (avg 1.36).
+    # Override via LeagueSettings(bench_hitters=N) or --bench-hitters on CLI.
+    bench_hitters: int | None = 1
+
+    def __post_init__(self) -> None:
+        """Validate bench_hitters is within bounds."""
+        if self.bench_hitters is not None:
+            if not (0 <= self.bench_hitters <= self.bench):
+                raise ValueError(
+                    f"bench_hitters must be between 0 and {self.bench}, "
+                    f"got {self.bench_hitters}"
+                )
 
     @property
     def total_budget(self) -> int:
@@ -66,7 +82,14 @@ class LeagueSettings:
 
     @property
     def bench_hitting_estimate(self) -> int:
-        """Estimated bench slots used for hitters (proportional)."""
+        """Estimated bench slots used for hitters league-wide.
+
+        When ``bench_hitters`` is set, uses that per-team count times
+        the number of teams. Otherwise falls back to a proportional
+        estimate based on the ratio of hitting to total starting slots.
+        """
+        if self.bench_hitters is not None:
+            return self.bench_hitters * self.num_teams
         hitting_ratio = self.hitting_slots / self.starting_slots
         total_bench = self.bench * self.num_teams
         return round(total_bench * hitting_ratio)
