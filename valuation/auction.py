@@ -1,4 +1,10 @@
-"""Convert value-above-replacement into auction dollar values."""
+"""Convert value-above-replacement into auction dollar values.
+
+Uses projected-draft replacement levels: a realistic drafted pool is built
+respecting all roster constraints, then each position's replacement level
+is the worst drafted player eligible there. Dollar distribution uses a
+simple global $/PAR ratio with $1 floor — no clamping needed.
+"""
 
 from __future__ import annotations
 
@@ -60,43 +66,6 @@ def _position_replacement(
     return min(replacement_levels.get(p, 0) for p in candidates)
 
 
-def _allocation_var(
-    points: float,
-    position_repl: float,
-    pooled_repl: float,
-    is_hitter: bool,
-) -> float:
-    """Compute clamped allocation weight for dollar distribution.
-
-    For hitters, uses a two-part formula that prevents deep/Util positions
-    from inflating dollar values:
-      base_var    = points - pooled_replacement  (position-blind value)
-      pos_premium = max(0, pooled_repl - position_repl)  (scarcity bonus)
-      allocation_var = max(0, base_var) + pos_premium
-
-    For scarce positions (position_repl < pooled_repl), this simplifies to
-    the full position-specific VAR. For deep/Util positions, the premium
-    clamps to 0 so only pooled VAR is used.
-
-    Pitchers are unaffected — their allocation_var equals their normal VAR.
-
-    Args:
-        points: Player's projected fantasy points.
-        position_repl: Position-specific replacement level.
-        pooled_repl: Pooled hitter replacement level.
-        is_hitter: Whether the player is a hitter.
-
-    Returns:
-        Clamped allocation weight (>= 0).
-    """
-    if not is_hitter:
-        return max(0, points - position_repl)
-
-    base_var = points - pooled_repl
-    pos_premium = max(0, pooled_repl - position_repl)
-    return max(0, base_var) + pos_premium
-
-
 def calculate_auction_values(
     df: pd.DataFrame,
     league: LeagueSettings = LEAGUE,
@@ -105,9 +74,9 @@ def calculate_auction_values(
     """Calculate auction dollar values for all players.
 
     Process:
-    1. Determine replacement level per position
-    2. For each player, VAR = points - replacement_level (for best position)
-    3. Compute clamped allocation_var to prevent Util/deep-position inflation
+    1. Determine replacement level per position (projected-draft method)
+    2. For each player, VAR = points - replacement_level (for scarcest position)
+    3. Set allocation_var = var (no clamping needed)
     4. Distribute total league budget proportionally to positive allocation_var
     5. $1 minimum for draftable players
     6. Round to whole dollars using largest-remainder method
@@ -126,35 +95,16 @@ def calculate_auction_values(
     if replacement_levels is None:
         replacement_levels = calculate_replacement_levels(df, league=league)
 
-    # Calculate each player's replacement level (best eligible position)
+    # Calculate each player's replacement level (scarcest eligible position)
     df["replacement_level"] = df["positions"].apply(
         lambda positions: _position_replacement(positions, replacement_levels)
     )
 
-    # Value above replacement (position-specific, used for ranking/display)
+    # Value above replacement (position-specific)
     df["var"] = df["points"] - df["replacement_level"]
 
-    # Pooled hitter replacement level for allocation clamping
-    hitter_mask = df["player_type"] == "hitter"
-    total_hitting_slots = (
-        league.total_hitting_slots_league + league.bench_hitting_estimate
-    )
-    hitters_by_pts = df.loc[hitter_mask, "points"].sort_values(ascending=False)
-    if len(hitters_by_pts) >= total_hitting_slots:
-        pooled_repl = hitters_by_pts.iloc[total_hitting_slots - 1]
-    else:
-        pooled_repl = hitters_by_pts.iloc[-1] if len(hitters_by_pts) > 0 else 0
-
-    # Clamped allocation weight: prevents deep/Util inflation
-    df["allocation_var"] = df.apply(
-        lambda row: _allocation_var(
-            row["points"],
-            row["replacement_level"],
-            pooled_repl,
-            row["player_type"] == "hitter",
-        ),
-        axis=1,
-    )
+    # allocation_var equals var — no clamping needed under projected-draft
+    df["allocation_var"] = df["var"]
 
     # Cap draftable players to actual roster spots
     max_draftable = league.roster_size * league.num_teams
@@ -204,10 +154,13 @@ def calculate_auction_values(
     else:
         df["dollar_value"] = 0
 
-    # Pooled Util value: what each hitter is worth ignoring positional scarcity
+    # Util value: position-blind auction price for hitters
+    # Util replacement = worst drafted hitter's points
+    hitter_mask = df["player_type"] == "hitter"
     df["util_value"] = 0
     if hitter_mask.any() and total_positive_alloc > 0:
-        util_var = df.loc[hitter_mask, "points"] - pooled_repl
+        util_repl = replacement_levels.get(Position.UTIL, 0)
+        util_var = df.loc[hitter_mask, "points"] - util_repl
         pitcher_mask = df["player_type"] == "pitcher"
         pitcher_var = df.loc[pitcher_mask, "var"].clip(lower=0)
 

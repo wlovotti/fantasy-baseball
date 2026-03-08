@@ -42,23 +42,22 @@ FanGraphs ATC CSVs
   → data/fangraphs.py (parse stats, warn if no position column)
   → data/yahoo_positions.py (fetch Yahoo eligibility, fuzzy-match → merge)
   → valuation/points.py (project fantasy points from stats)
-  → valuation/replacement.py (greedy position assignment → replacement levels)
-  → valuation/auction.py (VAR → clamped allocation_var → proportional dollars → integer rounding via largest-remainder)
+  → valuation/replacement.py (projected-draft replacement levels)
+  → valuation/auction.py (VAR → proportional dollars → integer rounding via largest-remainder)
   → CSV output
 ```
 
 Yahoo position eligibility is **required** — FanGraphs ATC CSVs have no position column, so without Yahoo data all hitters default to Util and valuations are wildly inaccurate. A validation guard in `replacement.py` raises `ValueError` if >50% of hitters are Util-only.
 
-All pitchers share a single P pool (no SP/RP split). Bench slots are allocated proportionally between hitters and pitchers. Position scarcity is driven by greedy assignment.
+All pitchers share a single P pool (no SP/RP split). Position scarcity is driven by projected-draft replacement levels: a realistic drafted pool is built respecting all roster constraints (position slots, Util, bench), then each position's replacement level is the minimum points among drafted players eligible at that position. Multi-position players are assigned to their scarcest position for pool construction but count toward all positions for replacement level calculation.
 Players like Ohtani appear as two separate entries (hitter + pitcher) — this is intentional, matching how the Yahoo league treats them.
 Dual-entry names are disambiguated with "(Batter)"/"(Pitcher)" suffixes by `valuation/names.py`, matching Yahoo's convention. The draft tracker keys on name, so unique names are required.
-Bench allocation can be overridden via `LeagueSettings(bench_hitters=N)` or `--bench-hitters N` on the CLI, calibrated from past draft data.
 Dollar values are rounded to whole integers (largest-remainder method) to match auction bidding rules while preserving exact budget totals.
 
 #### Key valuation columns
-- `var`: position-specific value above replacement (used for ranking/display)
-- `allocation_var`: clamped weight for dollar distribution — scarce positions use full position VAR, deep/Util positions use pooled hitter replacement level to prevent inflation
-- `dollar_value`: auction price (accounts for positional scarcity)
+- `var`: value above replacement — player's points minus replacement level at their scarcest eligible position
+- `allocation_var`: equals `var` (kept for draft tracker compatibility)
+- `dollar_value`: auction price (accounts for positional scarcity via projected-draft replacement levels)
 - `util_value`: position-blind auction price (useful during draft when evaluating a hitter for Util-only slot)
 
 ### Draft Tracker
