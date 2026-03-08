@@ -12,6 +12,7 @@ import random
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from config.league import LEAGUE, LeagueSettings
 from config.positions import Position, parse_positions
@@ -78,6 +79,7 @@ class SimTeam:
     budget: int = LEAGUE.budget_per_team
     filled_slots: dict[Position | str, int] = field(default_factory=dict)
     roster: list[DraftedPlayer] = field(default_factory=list)
+    bench_hitters: int | None = None  # Max bench hitters (None = no limit)
 
     def __post_init__(self) -> None:
         """Initialize filled slot counts to zero."""
@@ -105,8 +107,17 @@ class SimTeam:
 
     @property
     def total_points(self) -> float:
-        """Sum of projected points across all rostered players."""
-        return sum(dp.player.points for dp in self.roster)
+        """Sum of projected points, excluding bench hitters.
+
+        Bench pitchers count because they can be rotated into starts
+        throughout the week. Bench hitters mostly sit and rarely
+        accrue points, so they are excluded.
+        """
+        return sum(
+            dp.player.points
+            for dp in self.roster
+            if not (dp.slot == "Bench" and dp.player.player_type == "hitter")
+        )
 
     def can_roster(self, player: SimPlayer) -> bool:
         """Check if any legal slot exists for this player."""
@@ -125,13 +136,41 @@ class SimTeam:
         self.budget -= price
         self.roster.append(DraftedPlayer(player=player, slot=slot, price=price))
 
+    @property
+    def bench_hitter_count(self) -> int:
+        """Count how many bench slots are occupied by hitters."""
+        return sum(
+            1 for dp in self.roster
+            if dp.slot == "Bench" and dp.player.player_type == "hitter"
+        )
+
+    @property
+    def bench_pitcher_count(self) -> int:
+        """Count how many bench slots are occupied by pitchers."""
+        return sum(
+            1 for dp in self.roster
+            if dp.slot == "Bench" and dp.player.player_type == "pitcher"
+        )
+
     def _find_slot(self, player: SimPlayer) -> Position | str | None:
-        """Find the best slot for a player using scarcest-first assignment."""
+        """Find the best slot for a player using scarcest-first assignment.
+
+        Respects bench_hitters limit: when set, hitters can only go to bench
+        if the hitter count is below the limit, and pitchers can only go to
+        bench if there's room after reserving slots for hitters.
+        """
         if player.is_pitcher:
             # Pitchers: P > Bench
             if self.filled_slots[Position.P] < SLOT_CAPACITIES[Position.P]:
                 return Position.P
             if self.filled_slots["Bench"] < SLOT_CAPACITIES["Bench"]:
+                if self.bench_hitters is not None:
+                    # Reserve bench slots for hitters up to the limit
+                    bench_cap = SLOT_CAPACITIES["Bench"]
+                    pitcher_bench_cap = bench_cap - self.bench_hitters
+                    if self.bench_pitcher_count < pitcher_bench_cap:
+                        return "Bench"
+                    return None
                 return "Bench"
             return None
 
@@ -144,8 +183,11 @@ class SimTeam:
             elif pos in player.positions:
                 if self.filled_slots[pos] < SLOT_CAPACITIES[pos]:
                     return pos
-        # Fall through to bench
+        # Fall through to bench (respecting hitter limit)
         if self.filled_slots["Bench"] < SLOT_CAPACITIES["Bench"]:
+            if self.bench_hitters is not None:
+                if self.bench_hitter_count >= self.bench_hitters:
+                    return None
             return "Bench"
         return None
 
@@ -252,15 +294,20 @@ def determine_bid(
     player: SimPlayer,
     rng: random.Random,
     noise_std: float = 0.18,
+    user_strategy: Callable[[str], int] | None = None,
 ) -> int:
     """Determine a team's bid for a player.
 
-    User teams bid based on our_value; competitors bid based on yahoo_value.
+    User teams bid based on our_value (or user_strategy if provided);
+    competitors bid based on yahoo_value.
     Gaussian noise is added with std = noise_std * base_value.
     """
     if not team.can_roster(player):
         return 0
-    base = player.our_value if team.is_user else player.yahoo_value
+    if team.is_user and user_strategy is not None:
+        base = user_strategy(player.name)
+    else:
+        base = player.our_value if team.is_user else player.yahoo_value
     if base <= 0:
         # Still bid $1 to fill roster if team has open slots
         return min(1, team.max_bid) if team.max_bid >= 1 else 0
@@ -303,18 +350,27 @@ class DraftResult:
         return sum(t.total_points for t in comps) / len(comps)
 
 
-def _choose_nomination(team: SimTeam, available: list[SimPlayer]) -> SimPlayer | None:
+def _choose_nomination(
+    team: SimTeam,
+    available: list[SimPlayer],
+    user_strategy: Callable[[str], int] | None = None,
+) -> SimPlayer | None:
     """Choose which player a team nominates.
 
     Each team nominates the available player they value most highly
     (our_value for user, yahoo_value for competitors) that they can roster.
+    When user_strategy is provided, the user team uses strategy values
+    for nomination priority.
     """
     best: SimPlayer | None = None
     best_val = -1
     for player in available:
         if not team.can_roster(player):
             continue
-        val = player.our_value if team.is_user else player.yahoo_value
+        if team.is_user and user_strategy is not None:
+            val = user_strategy(player.name)
+        else:
+            val = player.our_value if team.is_user else player.yahoo_value
         if val > best_val:
             best_val = val
             best = player
@@ -328,25 +384,24 @@ def _fill_remaining_rosters(teams: list[SimTeam]) -> None:
         while team.remaining_slots > 0 and team.max_bid >= 1:
             filler_id += 1
             assigned = False
-            # Try pitcher filler first if P slots are open
-            if team.filled_slots[Position.P] < SLOT_CAPACITIES[Position.P]:
-                filler = SimPlayer(
-                    name=f"Filler P {filler_id}",
-                    player_type="pitcher",
-                    points=0.0,
-                    positions=[Position.P],
-                    our_value=1,
-                    yahoo_value=1,
-                )
-                if team.can_roster(filler):
-                    team.assign_player(filler, 1)
-                    assigned = True
+            # Try pitcher filler first (P slot or bench)
+            pitcher_filler = SimPlayer(
+                name=f"Filler P {filler_id}",
+                player_type="pitcher",
+                points=0.0,
+                positions=[Position.P],
+                our_value=1,
+                yahoo_value=1,
+            )
+            if team.can_roster(pitcher_filler):
+                team.assign_player(pitcher_filler, 1)
+                assigned = True
             if not assigned:
                 # Try hitter filler — eligible for all hitter positions + Bench
                 all_hitter_pos = [
                     p for p in HITTER_SCARCITY_ORDER if p != Position.UTIL
                 ] + [Position.UTIL]
-                filler = SimPlayer(
+                hitter_filler = SimPlayer(
                     name=f"Filler H {filler_id}",
                     player_type="hitter",
                     points=0.0,
@@ -354,8 +409,8 @@ def _fill_remaining_rosters(teams: list[SimTeam]) -> None:
                     our_value=1,
                     yahoo_value=1,
                 )
-                if team.can_roster(filler):
-                    team.assign_player(filler, 1)
+                if team.can_roster(hitter_filler):
+                    team.assign_player(hitter_filler, 1)
                     assigned = True
             if not assigned:
                 break  # No valid slot for any filler type
@@ -366,6 +421,9 @@ def run_one_draft(
     rng: random.Random,
     noise_std: float = 0.18,
     league: LeagueSettings = LEAGUE,
+    user_strategy: Callable[[str], int] | None = None,
+    on_pick: Callable[[SimPlayer, SimTeam, list[SimPlayer]], None] | None = None,
+    user_bench_hitters: int | None = None,
 ) -> DraftResult:
     """Simulate a single auction draft with realistic auction mechanics.
 
@@ -373,11 +431,31 @@ def run_one_draft(
     available player they value most. All teams submit their max
     willingness-to-pay; the winner pays second-highest bid + $1 (floored
     at $1). If only one bidder, they win at $1.
+
+    Args:
+        players: List of SimPlayer objects available for draft.
+        rng: Random number generator for reproducibility.
+        noise_std: Bid noise standard deviation as fraction of base value.
+        league: League settings controlling team count and roster.
+        user_strategy: Optional callable mapping player name to bid value
+            for the user team. When None, uses player.our_value.
+        on_pick: Optional callback fired after each successful pick.
+            Called with (player, winning_team, remaining_available).
+        user_bench_hitters: Max bench hitters for the user team. None means
+            no limit (default behavior). Set to 0 to fill bench with pitchers.
     """
+    # Competitors use league-average bench hitters (calibrated from draft
+    # history, default 1). User team uses user_bench_hitters if specified,
+    # otherwise matches the league default.
+    comp_bench_hitters = league.bench_hitters if league.bench_hitters is not None else 1
     teams = [
-        SimTeam(team_id=0, is_user=True),
+        SimTeam(
+            team_id=0,
+            is_user=True,
+            bench_hitters=user_bench_hitters if user_bench_hitters is not None else comp_bench_hitters,
+        ),
     ] + [
-        SimTeam(team_id=i, is_user=False)
+        SimTeam(team_id=i, is_user=False, bench_hitters=comp_bench_hitters)
         for i in range(1, league.num_teams)
     ]
 
@@ -402,7 +480,7 @@ def run_one_draft(
             continue
 
         # Nominator picks the player they want most
-        nominated = _choose_nomination(nominator, available)
+        nominated = _choose_nomination(nominator, available, user_strategy)
         if nominated is None:
             stale_rounds += 1
             if stale_rounds >= league.num_teams:
@@ -417,7 +495,7 @@ def run_one_draft(
         # All teams submit willingness-to-pay (starting bid is $1)
         bids: list[tuple[int, SimTeam]] = []
         for team in teams:
-            bid = determine_bid(team, nominated, rng, noise_std)
+            bid = determine_bid(team, nominated, rng, noise_std, user_strategy)
             if bid > 0:
                 bids.append((bid, team))
 
@@ -438,6 +516,9 @@ def run_one_draft(
 
         price = max(1, price)
         winner.assign_player(nominated, price)
+
+        if on_pick is not None:
+            on_pick(nominated, winner, available)
 
     # Any remaining players are undrafted
     undrafted.extend(available)
