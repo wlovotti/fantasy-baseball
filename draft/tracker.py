@@ -119,16 +119,16 @@ def _recalculate_values(state: DraftState) -> None:
             spendable = team.remaining_budget - empty_slots
             total_spendable += max(0, spendable)
 
-    # Total positive VAR among remaining players
-    total_var = sum(max(0, p.var) for p in remaining.values())
+    # Total positive allocation VAR among remaining players
+    total_var = sum(max(0, p.allocation_var) for p in remaining.values())
 
     if total_var <= 0 or total_spendable <= 0:
         for p in remaining.values():
             p.current_value = 1.0
         return
 
-    # Count players with positive VAR for the $1 floor
-    positive_var_count = sum(1 for p in remaining.values() if p.var > 0)
+    # Count players with positive allocation VAR for the $1 floor
+    positive_var_count = sum(1 for p in remaining.values() if p.allocation_var > 0)
 
     # Distribute: each positive-VAR player gets proportional share + $1
     distributable = total_spendable - positive_var_count
@@ -136,7 +136,7 @@ def _recalculate_values(state: DraftState) -> None:
         distributable = 0
 
     for p in remaining.values():
-        if p.var > 0:
-            p.current_value = (p.var / total_var) * distributable + 1
+        if p.allocation_var > 0:
+            p.current_value = (p.allocation_var / total_var) * distributable + 1
         else:
             p.current_value = 0.0

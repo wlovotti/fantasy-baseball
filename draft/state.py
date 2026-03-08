@@ -19,6 +19,8 @@ class PlayerValue(BaseModel):
     original_value: float = 0.0
     current_value: float = 0.0
     var: float = 0.0
+    allocation_var: float = 0.0
+    util_value: float = 0.0
 
 
 class DraftPick(BaseModel):
@@ -125,6 +127,8 @@ def initialize_state(
             original_value=dollar_val,
             current_value=dollar_val,
             var=float(row.get("var", 0)),
+            allocation_var=float(row.get("allocation_var", 0)),
+            util_value=float(row.get("util_value", 0)),
         )
 
     teams = {

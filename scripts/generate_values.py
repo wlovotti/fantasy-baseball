@@ -91,14 +91,15 @@ def main(
 
     # Display top players
     click.echo(f"\nTop {top} players by auction value:")
-    click.echo(f"{'Rank':<5} {'Name':<25} {'Pos':<12} {'Points':>8} {'Value':>7}")
-    click.echo("-" * 60)
+    click.echo(f"{'Rank':<5} {'Name':<25} {'Pos':<12} {'Points':>8} {'Value':>7} {'Util':>6}")
+    click.echo("-" * 67)
 
     for i, (_, row) in enumerate(valued.head(top).iterrows(), 1):
         pos_str = format_positions(row["positions"])
         click.echo(
             f"{i:<5} {row['name']:<25} {pos_str:<12} "
-            f"{row['points']:>8.1f} ${row['dollar_value']:>6.0f}"
+            f"{row['points']:>8.1f} ${row['dollar_value']:>6.0f} "
+            f"${row['util_value']:>5.0f}"
         )
 
     # Summary stats
@@ -108,7 +109,7 @@ def main(
 
     # Export to CSV
     export_cols = ["name", "team", "player_type", "points", "replacement_level",
-                   "var", "dollar_value"]
+                   "var", "allocation_var", "dollar_value", "util_value"]
     export_df = valued[valued["dollar_value"] > 0][
         [c for c in export_cols if c in valued.columns]
     ].copy()

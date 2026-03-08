@@ -107,6 +107,7 @@ async def search_players(q: str = "", limit: int = 50):
             "points": round(p.points, 1),
             "original_value": round(p.original_value, 1),
             "current_value": round(p.current_value, 1),
+            "util_value": round(p.util_value, 1),
         }
         for p in players
     ]
@@ -220,6 +221,7 @@ def _state_summary(state: DraftState) -> dict:
                 "points": round(p.points, 1),
                 "original_value": round(p.original_value, 1),
                 "current_value": round(p.current_value, 1),
+                "util_value": round(p.util_value, 1),
                 "value_change": round(p.current_value - p.original_value, 1),
             }
             for p in top_players
