@@ -35,17 +35,23 @@ class TestAuctionValues:
     """Tests for the auction value calculation."""
 
     def test_total_values_sum_to_budget(self, valued_pool):
-        """Dollar values should sum to approximately the total league budget."""
+        """Dollar values should sum to exactly the total league budget."""
         result = calculate_auction_values(valued_pool)
         draftable = result[result["dollar_value"] > 0]
         total = draftable["dollar_value"].sum()
-        assert total == pytest.approx(LEAGUE.total_budget, rel=0.01)
+        assert total == LEAGUE.total_budget
+
+    def test_values_are_integers(self, valued_pool):
+        """Dollar values should be whole numbers for auction bidding."""
+        result = calculate_auction_values(valued_pool)
+        draftable = result[result["dollar_value"] > 0]
+        assert (draftable["dollar_value"] == draftable["dollar_value"].astype(int)).all()
 
     def test_higher_points_means_higher_value(self, valued_pool):
-        """Players with more points should have higher dollar values."""
+        """Players with more points should have higher or equal dollar values."""
         result = calculate_auction_values(valued_pool)
         draftable = result[result["dollar_value"] > 0].head(20)
-        # Top players should be in descending value order
+        # Top players should be in non-increasing value order
         values = draftable["dollar_value"].tolist()
         assert values == sorted(values, reverse=True)
 
@@ -53,7 +59,7 @@ class TestAuctionValues:
         """Draftable players should have at least $1 value."""
         result = calculate_auction_values(valued_pool)
         draftable = result[result["dollar_value"] > 0]
-        assert (draftable["dollar_value"] >= 1.0).all()
+        assert (draftable["dollar_value"] >= 1).all()
 
     def test_non_draftable_players_have_zero(self, valued_pool):
         """Players below replacement should have $0 value."""

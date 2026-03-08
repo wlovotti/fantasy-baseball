@@ -7,6 +7,7 @@ with FanGraphs projections for accurate replacement-level calculations.
 
 import sys
 from pathlib import Path
+from typing import Optional
 
 import click
 import pandas as pd
@@ -49,7 +50,7 @@ def main(
     output: str,
     top: int,
     threshold: int,
-    bench_hitters: int | None,
+    bench_hitters: Optional[int],
 ) -> None:
     """Generate auction values using Yahoo positions + FanGraphs projections.
 
@@ -97,7 +98,7 @@ def main(
         pos_str = format_positions(row["positions"])
         click.echo(
             f"{i:<5} {row['name']:<25} {pos_str:<12} "
-            f"{row['points']:>8.1f} ${row['dollar_value']:>6.1f}"
+            f"{row['points']:>8.1f} ${row['dollar_value']:>6.0f}"
         )
 
     # Summary stats
