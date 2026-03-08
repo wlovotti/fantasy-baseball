@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from config.positions import Position, parse_positions
-from scripts.generate_values_yahoo import merge_yahoo_positions
+from data.yahoo_positions import merge_yahoo_positions
 
 
 class TestParsePositionsYahooStrings:

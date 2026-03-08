@@ -19,11 +19,8 @@ Fantasy baseball auction draft toolkit: valuation engine, Yahoo Fantasy API inte
 .venv/bin/pytest tests/test_points.py
 .venv/bin/pytest tests/test_points.py::test_batting_points -v
 
-# Generate auction values from FanGraphs CSVs
+# Generate auction values (requires Yahoo auth for position eligibility)
 .venv/bin/python scripts/generate_values.py projections/hitters.csv projections/pitchers.csv
-
-# Generate Yahoo-enhanced values (merges Yahoo position eligibility)
-.venv/bin/python scripts/generate_values_yahoo.py projections/hitters.csv projections/pitchers.csv
 
 # Upload values to Yahoo
 .venv/bin/python scripts/upload_to_yahoo.py player_values.csv
@@ -39,12 +36,15 @@ Fantasy baseball auction draft toolkit: valuation engine, Yahoo Fantasy API inte
 
 ```
 FanGraphs ATC CSVs
-  → data/fangraphs.py (parse, normalize positions via Position enum)
+  → data/fangraphs.py (parse stats, warn if no position column)
+  → data/yahoo_positions.py (fetch Yahoo eligibility, fuzzy-match → merge)
   → valuation/points.py (project fantasy points from stats)
   → valuation/replacement.py (greedy position assignment → replacement levels)
   → valuation/auction.py (value above replacement → proportional dollar values)
   → CSV output
 ```
+
+Yahoo position eligibility is **required** — FanGraphs ATC CSVs have no position column, so without Yahoo data all hitters default to Util and valuations are wildly inaccurate. A validation guard in `replacement.py` raises `ValueError` if >50% of hitters are Util-only.
 
 All pitchers share a single P pool (no SP/RP split). Bench slots are allocated proportionally between hitters and pitchers. Position scarcity is driven by greedy assignment.
 

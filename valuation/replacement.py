@@ -28,6 +28,22 @@ def calculate_replacement_levels(
     Returns:
         Dictionary mapping each Position to its replacement-level points value.
     """
+    # Guard: if most hitters have only [Util], positions are missing and
+    # the output will be garbage (no positional scarcity).
+    hitters = df[df["player_type"] == "hitter"]
+    if len(hitters) > 0:
+        util_only_count = sum(
+            1 for positions in hitters["positions"]
+            if positions == [Position.UTIL]
+        )
+        if util_only_count / len(hitters) > 0.5:
+            raise ValueError(
+                f"{util_only_count}/{len(hitters)} hitters have only [Util] "
+                "positions. This means position data is missing and valuations "
+                "will be wildly inaccurate. Merge Yahoo position eligibility "
+                "before calculating replacement levels."
+            )
+
     slots = dict(POSITION_SLOTS.slots)
 
     # Add bench slots proportionally

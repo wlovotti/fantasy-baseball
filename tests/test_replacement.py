@@ -102,3 +102,28 @@ class TestFindBestPosition:
         remaining = {Position.C: 0, Position.UTIL: 0}
         eligible = [Position.C, Position.UTIL]
         assert _find_best_position(eligible, remaining) is None
+
+
+class TestReplacementLevelValidation:
+    """Tests for the Util-only validation guard."""
+
+    def test_raises_on_all_util_hitters(self):
+        """Should raise ValueError when most hitters have only [Util] positions."""
+        players = []
+        for i in range(20):
+            players.append({
+                "name": f"Hitter {i}",
+                "positions": [Position.UTIL],
+                "points": 300 - i * 10,
+                "player_type": "hitter",
+            })
+        for i in range(10):
+            players.append({
+                "name": f"Pitcher {i}",
+                "positions": [Position.P],
+                "points": 250 - i * 10,
+                "player_type": "pitcher",
+            })
+        df = pd.DataFrame(players)
+        with pytest.raises(ValueError, match="positions"):
+            calculate_replacement_levels(df)
