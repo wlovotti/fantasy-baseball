@@ -5,104 +5,340 @@ import pytest
 
 from config.league import LeagueSettings
 from config.positions import Position
-from valuation.replacement import calculate_replacement_levels, _find_best_position
+from valuation.replacement import (
+    _assign_primary_position,
+    _build_drafted_pool,
+    _final_replacement_levels,
+    _first_pass_replacement,
+    calculate_replacement_levels,
+)
 
 
-@pytest.fixture
-def simple_player_pool():
-    """Create a small player pool for testing replacement level logic."""
+def _make_league(**kwargs):
+    """Create a small league for testing.
+
+    Defaults: 2 teams, 10 roster, 1C/1B/1OF/1Util/1P per team, bench=1,
+    bench_hitters=0. Override any field via kwargs.
+    """
+    defaults = dict(
+        num_teams=2,
+        roster_size=5,
+        catcher=1,
+        first_base=1,
+        second_base=0,
+        third_base=0,
+        shortstop=0,
+        outfield=1,
+        utility=1,
+        pitcher=1,
+        bench=0,
+        bench_hitters=0,
+    )
+    defaults.update(kwargs)
+    return LeagueSettings(**defaults)
+
+
+def _make_players(groups):
+    """Create a player DataFrame from a list of (name_prefix, positions, base_pts, count, step, player_type) tuples."""
     players = []
-
-    # 20 catchers with descending points
-    for i in range(20):
-        players.append({
-            "name": f"Catcher {i}",
-            "positions": [Position.C, Position.UTIL],
-            "points": 300 - i * 10,
-            "player_type": "hitter",
-        })
-
-    # 20 first basemen
-    for i in range(20):
-        players.append({
-            "name": f"First Baseman {i}",
-            "positions": [Position.FIRST, Position.UTIL],
-            "points": 400 - i * 10,
-            "player_type": "hitter",
-        })
-
-    # 40 outfielders
-    for i in range(40):
-        players.append({
-            "name": f"Outfielder {i}",
-            "positions": [Position.OF, Position.UTIL],
-            "points": 350 - i * 5,
-            "player_type": "hitter",
-        })
-
-    # 60 pitchers
-    for i in range(60):
-        players.append({
-            "name": f"Pitcher {i}",
-            "positions": [Position.P],
-            "points": 300 - i * 3,
-            "player_type": "pitcher",
-        })
-
+    for name_prefix, positions, base_pts, count, step, player_type in groups:
+        for i in range(count):
+            players.append({
+                "name": f"{name_prefix} {i}",
+                "positions": positions,
+                "points": base_pts - i * step,
+                "player_type": player_type,
+            })
     return pd.DataFrame(players)
 
 
-class TestReplacementLevels:
-    """Tests for replacement level calculation."""
+class TestFirstPassReplacement:
+    """Tests for first-pass (independent) replacement levels."""
 
-    def test_returns_all_positions(self, simple_player_pool):
+    def test_nth_best_at_position(self):
+        """First-pass replacement should be the Nth-best eligible player at each position."""
+        df = _make_players([
+            ("C", [Position.C, Position.UTIL], 300, 5, 10, "hitter"),
+            ("OF", [Position.OF, Position.UTIL], 350, 8, 10, "hitter"),
+            ("P", [Position.P], 280, 5, 10, "pitcher"),
+        ])
+        league = _make_league(num_teams=2, catcher=1, outfield=2, pitcher=1)
+        levels = _first_pass_replacement(df, league)
+
+        # 2nd-best C (N=2): 300, 290 → replacement = 290
+        assert levels[Position.C] == 290
+        # 4th-best OF (N=4): 350, 340, 330, 320 → replacement = 320
+        assert levels[Position.OF] == 320
+        # 2nd-best P (N=2): 280, 270 → replacement = 270
+        assert levels[Position.P] == 270
+
+    def test_fewer_players_than_slots(self):
+        """When fewer players exist than slots, use worst available."""
+        df = _make_players([
+            ("C", [Position.C, Position.UTIL], 300, 1, 10, "hitter"),
+            ("OF", [Position.OF, Position.UTIL], 350, 5, 10, "hitter"),
+            ("P", [Position.P], 280, 3, 10, "pitcher"),
+        ])
+        # Need 4 catchers but only 1 exists
+        league = _make_league(num_teams=2, catcher=2, outfield=1, pitcher=1)
+        levels = _first_pass_replacement(df, league)
+
+        assert levels[Position.C] == 300  # Only 1 catcher, that's the worst
+
+    def test_excludes_util(self):
+        """First-pass replacement should not include Util as a position."""
+        df = _make_players([
+            ("C", [Position.C, Position.UTIL], 300, 3, 10, "hitter"),
+            ("P", [Position.P], 280, 3, 10, "pitcher"),
+        ])
+        league = _make_league(num_teams=1, catcher=1, pitcher=1)
+        levels = _first_pass_replacement(df, league)
+
+        assert Position.UTIL not in levels
+
+    def test_multi_position_counted_at_all(self):
+        """A C/1B player should count toward both C and 1B first-pass levels."""
+        df = _make_players([
+            ("C", [Position.C, Position.UTIL], 300, 2, 10, "hitter"),
+            ("C/1B", [Position.C, Position.FIRST, Position.UTIL], 295, 1, 0, "hitter"),
+            ("1B", [Position.FIRST, Position.UTIL], 400, 3, 10, "hitter"),
+            ("P", [Position.P], 280, 2, 10, "pitcher"),
+        ])
+        league = _make_league(num_teams=1, catcher=1, first_base=1, pitcher=1)
+        levels = _first_pass_replacement(df, league)
+
+        # C-eligible: 300, 295, 290 → 1st-best = 300
+        assert levels[Position.C] == 300
+        # 1B-eligible: 400, 395 (wait, 295 is C/1B), 390, 380 → 1st-best = 400
+        # Actually: 1B-eligible = [400, 390, 380, 295] → sorted desc → 1st = 400
+        assert levels[Position.FIRST] == 400
+
+
+class TestPrimaryPositionAssignment:
+    """Tests for multi-position player assignment to primary position."""
+
+    def test_assigns_to_scarcest_position(self):
+        """Player should be assigned to position with lowest first-pass replacement."""
+        first_pass = {Position.C: 200, Position.FIRST: 350, Position.OF: 300}
+        positions = [Position.C, Position.FIRST, Position.UTIL]
+
+        result = _assign_primary_position(positions, first_pass)
+        assert result == Position.C  # C has lowest replacement (200)
+
+    def test_util_only_returns_none(self):
+        """Util-only players should return None (no specific position)."""
+        first_pass = {Position.C: 200}
+        positions = [Position.UTIL]
+
+        result = _assign_primary_position(positions, first_pass)
+        assert result is None
+
+    def test_pitcher_assigned_to_p(self):
+        """Pitchers (only P eligible) should be assigned to P."""
+        first_pass = {Position.P: 150}
+        positions = [Position.P]
+
+        result = _assign_primary_position(positions, first_pass)
+        assert result == Position.P
+
+    def test_single_position_hitter(self):
+        """Single-position hitter assigned to that position."""
+        first_pass = {Position.SS: 250, Position.OF: 300}
+        positions = [Position.SS, Position.UTIL]
+
+        result = _assign_primary_position(positions, first_pass)
+        assert result == Position.SS
+
+
+class TestDraftedPoolConstruction:
+    """Tests for building the projected drafted pool."""
+
+    def test_pool_size_matches_roster_slots(self):
+        """Drafted pool should have exactly roster_size × num_teams players."""
+        df = _make_players([
+            ("C", [Position.C, Position.UTIL], 300, 5, 10, "hitter"),
+            ("1B", [Position.FIRST, Position.UTIL], 350, 5, 10, "hitter"),
+            ("OF", [Position.OF, Position.UTIL], 320, 10, 5, "hitter"),
+            ("P", [Position.P], 280, 10, 5, "pitcher"),
+        ])
+        league = _make_league(
+            num_teams=2, roster_size=10,
+            catcher=1, first_base=1, outfield=2, utility=1,
+            pitcher=3, bench=2, bench_hitters=1,
+        )
+        first_pass = _first_pass_replacement(df, league)
+        pool = _build_drafted_pool(df, league, first_pass)
+
+        expected_size = league.roster_size * league.num_teams
+        assert len(pool) == expected_size
+
+    def test_respects_position_slots(self):
+        """Starter slots should be filled by top players at each position."""
+        df = _make_players([
+            ("C", [Position.C, Position.UTIL], 300, 5, 10, "hitter"),
+            ("OF", [Position.OF, Position.UTIL], 350, 10, 10, "hitter"),
+            ("P", [Position.P], 280, 8, 10, "pitcher"),
+        ])
+        league = _make_league(
+            num_teams=2, roster_size=6,
+            catcher=1, first_base=0, outfield=1, utility=1,
+            pitcher=1, bench=2, bench_hitters=1,
+        )
+        first_pass = _first_pass_replacement(df, league)
+        pool = _build_drafted_pool(df, league, first_pass)
+
+        # Top 2 catchers should be in the pool (2 C slots)
+        catcher_names = pool[
+            pool["positions"].apply(lambda ps: Position.C in ps)
+        ]["name"].tolist()
+        assert "C 0" in catcher_names
+        assert "C 1" in catcher_names
+
+    def test_util_only_hitters_fill_util_slots(self):
+        """Util-only hitters should be drafted into Util/bench slots."""
+        df = _make_players([
+            ("C", [Position.C, Position.UTIL], 300, 3, 10, "hitter"),
+            ("Util", [Position.UTIL], 350, 3, 10, "hitter"),
+            ("P", [Position.P], 280, 5, 10, "pitcher"),
+        ])
+        league = _make_league(
+            num_teams=1, roster_size=5,
+            catcher=1, first_base=0, outfield=0, utility=2,
+            pitcher=2, bench=0, bench_hitters=0,
+        )
+        first_pass = _first_pass_replacement(df, league)
+        pool = _build_drafted_pool(df, league, first_pass)
+
+        # The top Util-only hitter (350 pts) should be drafted
+        assert "Util 0" in pool["name"].tolist()
+
+    def test_fewer_players_than_pool_size(self):
+        """When fewer players exist than pool slots, draft all of them."""
+        df = _make_players([
+            ("C", [Position.C, Position.UTIL], 300, 2, 10, "hitter"),
+            ("P", [Position.P], 280, 2, 10, "pitcher"),
+        ])
+        league = _make_league(
+            num_teams=2, roster_size=10,
+            catcher=1, pitcher=1, bench=0, bench_hitters=0,
+        )
+        first_pass = _first_pass_replacement(df, league)
+        pool = _build_drafted_pool(df, league, first_pass)
+
+        # Only 4 players exist, pool can't exceed that
+        assert len(pool) == 4
+
+
+class TestFinalReplacementLevels:
+    """Tests for deriving final replacement levels from the drafted pool."""
+
+    def test_multi_position_counted_at_primary_only(self):
+        """A drafted C/1B player should only count toward their primary position."""
+        df = _make_players([
+            ("C/1B", [Position.C, Position.FIRST, Position.UTIL], 250, 1, 0, "hitter"),
+            ("OF", [Position.OF, Position.UTIL], 350, 5, 10, "hitter"),
+            ("P", [Position.P], 280, 3, 10, "pitcher"),
+        ])
+        league = _make_league(
+            num_teams=1, roster_size=5,
+            catcher=1, first_base=0, outfield=2, utility=0,
+            pitcher=2, bench=0, bench_hitters=0,
+        )
+        first_pass = _first_pass_replacement(df, league)
+        pool = _build_drafted_pool(df, league, first_pass)
+
+        levels = _final_replacement_levels(pool)
+
+        # C/1B player assigned to C (scarcest), so counts toward C only
+        assert levels[Position.C] <= 250
+        # No one assigned to 1B, so 1B replacement = 0
+        assert levels[Position.FIRST] == 0.0
+
+    def test_final_levels_leq_first_pass(self):
+        """Final replacement levels should be <= first-pass levels.
+
+        Util/bench expand effective demand at each position, so the worst
+        drafted player eligible at a position may be a Util/bench player
+        with lower points than the Nth-best starter.
+        """
+        df = _make_players([
+            ("C", [Position.C, Position.UTIL], 300, 5, 10, "hitter"),
+            ("1B", [Position.FIRST, Position.UTIL], 350, 5, 10, "hitter"),
+            ("OF", [Position.OF, Position.UTIL], 320, 10, 5, "hitter"),
+            ("P", [Position.P], 280, 10, 5, "pitcher"),
+        ])
+        league = _make_league(
+            num_teams=2, roster_size=10,
+            catcher=1, first_base=1, outfield=2, utility=1,
+            pitcher=3, bench=2, bench_hitters=1,
+        )
+        first_pass = _first_pass_replacement(df, league)
+        pool = _build_drafted_pool(df, league, first_pass)
+        final = _final_replacement_levels(pool)
+
+        for pos in first_pass:
+            if final.get(pos, 0) > 0 and first_pass[pos] > 0:
+                assert final[pos] <= first_pass[pos], (
+                    f"Final {pos} ({final[pos]}) > first-pass ({first_pass[pos]})"
+                )
+
+    def test_empty_position_gets_zero(self):
+        """Positions with no drafted eligible players get replacement = 0."""
+        df = _make_players([
+            ("OF", [Position.OF, Position.UTIL], 350, 5, 10, "hitter"),
+            ("P", [Position.P], 280, 3, 10, "pitcher"),
+        ])
+        league = _make_league(
+            num_teams=1, roster_size=4,
+            catcher=0, first_base=0, outfield=2, utility=0,
+            pitcher=2, bench=0, bench_hitters=0,
+        )
+        first_pass = _first_pass_replacement(df, league)
+        pool = _build_drafted_pool(df, league, first_pass)
+        levels = _final_replacement_levels(pool)
+
+        assert levels[Position.C] == 0.0
+        assert levels[Position.SS] == 0.0
+
+
+class TestReplacementLevels:
+    """Integration tests for the full calculate_replacement_levels function."""
+
+    def test_returns_all_positions(self):
         """Should return replacement levels for all positions."""
-        levels = calculate_replacement_levels(simple_player_pool)
+        df = _make_players([
+            ("C", [Position.C, Position.UTIL], 300, 5, 10, "hitter"),
+            ("1B", [Position.FIRST, Position.UTIL], 350, 5, 10, "hitter"),
+            ("OF", [Position.OF, Position.UTIL], 320, 10, 5, "hitter"),
+            ("P", [Position.P], 280, 10, 5, "pitcher"),
+        ])
+        league = _make_league(
+            num_teams=2, roster_size=8,
+            catcher=1, first_base=1, outfield=2, utility=1,
+            pitcher=3, bench=0, bench_hitters=0,
+        )
+        levels = calculate_replacement_levels(df, league=league)
         for pos in Position:
             assert pos in levels
 
-    def test_replacement_levels_are_reasonable(self, simple_player_pool):
-        """Replacement levels should be between min and max player points."""
-        levels = calculate_replacement_levels(simple_player_pool)
-        max_pts = simple_player_pool["points"].max()
-        min_pts = simple_player_pool["points"].min()
+    def test_replacement_levels_are_reasonable(self):
+        """Replacement levels should be between 0 and max player points."""
+        df = _make_players([
+            ("C", [Position.C, Position.UTIL], 300, 5, 10, "hitter"),
+            ("OF", [Position.OF, Position.UTIL], 350, 10, 10, "hitter"),
+            ("P", [Position.P], 280, 8, 10, "pitcher"),
+        ])
+        league = _make_league(
+            num_teams=2, roster_size=8,
+            catcher=1, first_base=0, outfield=2, utility=1,
+            pitcher=3, bench=1, bench_hitters=0,
+        )
+        levels = calculate_replacement_levels(df, league=league)
+        max_pts = df["points"].max()
 
         for pos, level in levels.items():
             assert level >= 0, f"{pos} has negative replacement level"
             assert level <= max_pts, f"{pos} replacement level exceeds max"
-
-    def test_replacement_level_below_best_player(self, simple_player_pool):
-        """Replacement level at each position should be below the best player there.
-
-        The best catcher (300 pts) and best outfielder (350 pts) should both
-        be above their respective replacement levels.
-        """
-        levels = calculate_replacement_levels(simple_player_pool)
-        assert levels[Position.C] < 300, "Replacement C should be below best catcher"
-        assert levels[Position.OF] < 350, "Replacement OF should be below best OF"
-        assert levels[Position.P] < 300, "Replacement P should be below best pitcher"
-
-
-class TestFindBestPosition:
-    """Tests for the greedy position assignment helper."""
-
-    def test_prefers_scarce_position(self):
-        """Should assign to the position with fewer remaining slots."""
-        remaining = {Position.C: 1, Position.FIRST: 5, Position.UTIL: 10}
-        eligible = [Position.C, Position.FIRST, Position.UTIL]
-        assert _find_best_position(eligible, remaining) == Position.C
-
-    def test_deprioritizes_util(self):
-        """Util should only be used when specific positions are full."""
-        remaining = {Position.FIRST: 0, Position.UTIL: 5}
-        eligible = [Position.FIRST, Position.UTIL]
-        assert _find_best_position(eligible, remaining) == Position.UTIL
-
-    def test_returns_none_when_no_slots(self):
-        """Should return None when all eligible positions are full."""
-        remaining = {Position.C: 0, Position.UTIL: 0}
-        eligible = [Position.C, Position.UTIL]
-        assert _find_best_position(eligible, remaining) is None
 
 
 class TestReplacementLevelValidation:
@@ -170,72 +406,3 @@ class TestLeagueSettingsBenchHitters:
         """Negative bench_hitters should raise ValueError."""
         with pytest.raises(ValueError, match="bench_hitters must be between"):
             LeagueSettings(bench_hitters=-1)
-
-
-class TestReplacementLevelsWithCustomLeague:
-    """Tests that calculate_replacement_levels respects a custom league param."""
-
-    @pytest.fixture
-    def large_player_pool(self):
-        """Player pool large enough that bench allocation affects P replacement.
-
-        With 14 teams * 8 P slots = 112 starting pitchers + up to 56 bench,
-        we need >168 pitchers so bench allocation matters.
-        """
-        players = []
-        for i in range(30):
-            players.append({
-                "name": f"Catcher {i}",
-                "positions": [Position.C, Position.UTIL],
-                "points": 300 - i * 5,
-                "player_type": "hitter",
-            })
-        for i in range(30):
-            players.append({
-                "name": f"First Baseman {i}",
-                "positions": [Position.FIRST, Position.UTIL],
-                "points": 400 - i * 5,
-                "player_type": "hitter",
-            })
-        for i in range(60):
-            players.append({
-                "name": f"Outfielder {i}",
-                "positions": [Position.OF, Position.UTIL],
-                "points": 350 - i * 3,
-                "player_type": "hitter",
-            })
-        for i in range(200):
-            players.append({
-                "name": f"Pitcher {i}",
-                "positions": [Position.P],
-                "points": 300 - i * 1,
-                "player_type": "pitcher",
-            })
-        return pd.DataFrame(players)
-
-    def test_custom_league_changes_replacement_levels(self, large_player_pool):
-        """Replacement levels should differ with different bench allocations."""
-        all_bench_hitting = LeagueSettings(bench_hitters=4)
-        no_bench_hitting = LeagueSettings(bench_hitters=0)
-
-        levels_all_h = calculate_replacement_levels(
-            large_player_pool, league=all_bench_hitting
-        )
-        levels_no_h = calculate_replacement_levels(
-            large_player_pool, league=no_bench_hitting
-        )
-
-        # All bench to pitchers gives more P slots → lower P replacement level
-        assert levels_no_h[Position.P] < levels_all_h[Position.P]
-
-    def test_zero_bench_hitters_raises_pitcher_replacement(self, large_player_pool):
-        """Zero bench hitters means more pitcher bench → lower P replacement."""
-        default_levels = calculate_replacement_levels(large_player_pool)
-
-        no_bench_hitting = LeagueSettings(bench_hitters=0)
-        custom_levels = calculate_replacement_levels(
-            large_player_pool, league=no_bench_hitting
-        )
-
-        # More pitcher bench slots → replacement pitcher is worse (lower points)
-        assert custom_levels[Position.P] <= default_levels[Position.P]

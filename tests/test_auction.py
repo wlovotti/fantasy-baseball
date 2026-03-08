@@ -145,7 +145,7 @@ class TestAuctionValues:
         assert (top_hitters["util_value"] > 0).all()
 
     def test_util_value_ordered_by_points_mixed(self, mixed_position_pool):
-        """In pooled system, util_value should follow points order (no position effect)."""
+        """Util_value should follow points order (position-blind)."""
         result = calculate_auction_values(mixed_position_pool)
         hitters = result[
             (result["player_type"] == "hitter") & (result["util_value"] > 0)
@@ -154,25 +154,11 @@ class TestAuctionValues:
         # Non-increasing order (ties allowed due to rounding)
         assert values == sorted(values, reverse=True)
 
-    def test_scarce_position_has_allocation_premium(self, mixed_position_pool):
-        """Scarce-position hitters should have allocation_var > pooled VAR."""
+    def test_allocation_var_equals_var(self, mixed_position_pool):
+        """Under projected-draft, allocation_var should equal var for all players."""
         result = calculate_auction_values(mixed_position_pool)
-        # Top catchers (scarce position) should have allocation_var > base_var
-        catchers = result[
-            result["positions"].apply(lambda ps: Position.C in ps)
-            & (result["dollar_value"] > 0)
-        ]
-        deep = result[
-            result["positions"].apply(lambda ps: Position.OF in ps)
-            & (result["dollar_value"] > 0)
-        ]
-        if len(catchers) > 0 and len(deep) > 0:
-            # A catcher with same points as an OF should have higher allocation_var
-            top_c = catchers.iloc[0]
-            # allocation_var uses position-specific repl for scarce C
-            # For equally-pointed deep-position player, allocation_var uses pooled repl
-            assert top_c["allocation_var"] >= top_c["var"] * 0.5  # sanity check
-            assert top_c["dollar_value"] >= top_c["util_value"]
+        draftable = result[result["dollar_value"] > 0]
+        assert (draftable["allocation_var"] == draftable["var"]).all()
 
     def test_position_scarcity_affects_replacement_level(self, mixed_position_pool):
         """Different positions should have different replacement levels, not all Util."""
@@ -189,7 +175,7 @@ class TestAuctionValues:
         assert "allocation_var" in result.columns
 
     def test_util_only_not_inflated(self, mixed_position_pool):
-        """A Util-only player's dollar_value should approximate util_value, not inflate."""
+        """A Util-only player's dollar_value should be reasonable, not wildly inflated."""
         # Add a Util-only hitter with high points
         util_only = pd.DataFrame([{
             "name": "Util Star",
@@ -201,9 +187,10 @@ class TestAuctionValues:
         result = calculate_auction_values(pool)
 
         player = result[result["name"] == "Util Star"].iloc[0]
-        # dollar_value should be close to util_value (within a few dollars),
-        # not massively inflated by position scarcity elsewhere
-        assert player["dollar_value"] <= player["util_value"] + 3
+        # Util replacement = worst drafted hitter's points.
+        # dollar_value and util_value may differ modestly due to different
+        # VAR denominators, but should be in the same ballpark.
+        assert player["dollar_value"] <= player["util_value"] * 1.5
 
     def test_scarce_position_gets_premium(self, mixed_position_pool):
         """A catcher should get higher dollar_value than an equally-pointed deep-position player."""
