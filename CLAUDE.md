@@ -43,7 +43,7 @@ FanGraphs ATC CSVs
   → data/yahoo_positions.py (fetch Yahoo eligibility, fuzzy-match → merge)
   → valuation/points.py (project fantasy points from stats)
   → valuation/replacement.py (greedy position assignment → replacement levels)
-  → valuation/auction.py (value above replacement → proportional dollar values)
+  → valuation/auction.py (VAR → proportional dollars → integer rounding via largest-remainder)
   → CSV output
 ```
 
@@ -51,6 +51,7 @@ Yahoo position eligibility is **required** — FanGraphs ATC CSVs have no positi
 
 All pitchers share a single P pool (no SP/RP split). Bench slots are allocated proportionally between hitters and pitchers. Position scarcity is driven by greedy assignment.
 Bench allocation can be overridden via `LeagueSettings(bench_hitters=N)` or `--bench-hitters N` on the CLI, calibrated from past draft data.
+Dollar values are rounded to whole integers (largest-remainder method) to match auction bidding rules while preserving exact budget totals.
 
 ### Draft Tracker
 

@@ -2,11 +2,40 @@
 
 from __future__ import annotations
 
+import math
+
+import numpy as np
 import pandas as pd
 
 from config.league import LEAGUE, LeagueSettings
 from config.positions import Position
 from valuation.replacement import calculate_replacement_levels
+
+
+def _round_to_integers(values: pd.Series, total: int) -> pd.Series:
+    """Round fractional dollar values to integers preserving the total.
+
+    Uses largest-remainder method: floor all values, then distribute the
+    leftover dollars one at a time to the players with the largest fractional
+    remainders.
+
+    Args:
+        values: Series of fractional dollar values (all >= 1 for draftable).
+        total: Target integer total that rounded values must sum to.
+
+    Returns:
+        Series of integer dollar values summing exactly to *total*.
+    """
+    floors = np.floor(values).astype(int)
+    remainders = values - floors
+    shortfall = total - floors.sum()
+
+    # Award extra $1 to the players with the largest remainders
+    if shortfall > 0:
+        top_indices = remainders.nlargest(shortfall).index
+        floors.loc[top_indices] += 1
+
+    return floors
 
 
 def calculate_auction_values(
@@ -21,6 +50,7 @@ def calculate_auction_values(
     2. For each player, VAR = points - replacement_level (for best position)
     3. Distribute total league budget proportionally to positive VAR
     4. $1 minimum for draftable players
+    5. Round to whole dollars using largest-remainder method
 
     Args:
         df: Player DataFrame with 'points' and 'positions' columns.
@@ -59,6 +89,11 @@ def calculate_auction_values(
             df.loc[draftable, "var"] / total_positive_var * distributable + 1
         )
         df.loc[~draftable, "dollar_value"] = 0
+
+        # Round to whole dollars, preserving total budget
+        df.loc[draftable, "dollar_value"] = _round_to_integers(
+            df.loc[draftable, "dollar_value"], total_budget
+        )
     else:
         df["dollar_value"] = 0
 

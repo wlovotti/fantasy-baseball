@@ -25,7 +25,7 @@ def upload_values(league, matched_df: pd.DataFrame) -> dict[str, int]:
     for _, row in to_upload.iterrows():
         try:
             player_id = int(row["yahoo_id"])
-            value = max(1, round(row["dollar_value"]))
+            value = max(1, int(row["dollar_value"]))
             league.edit_auction_value(player_id, value)
             uploaded += 1
         except Exception as e:
