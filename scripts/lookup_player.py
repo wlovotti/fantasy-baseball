@@ -27,12 +27,17 @@ def is_util_only(positions: str) -> bool:
 
 
 def lookup(df: pd.DataFrame, query: str, top: int = 5) -> pd.DataFrame:
-    """Fuzzy-match a player name and return top matches."""
+    """Fuzzy-match a player name and return top matches.
+
+    Uses the DataFrame index directly from rapidfuzz results to correctly
+    handle players with identical names (e.g. dual hitter/pitcher entries).
+    """
+    names = {idx: name for idx, name in enumerate(df["name"].tolist())}
     results = process.extract(
-        query, df["name"].tolist(), scorer=fuzz.WRatio, limit=top
+        query, names, scorer=fuzz.WRatio, limit=top
     )
-    indices = [df.index[df["name"] == name].tolist()[0] for name, score, _ in results]
-    return df.loc[indices].copy()
+    indices = [idx for _, score, idx in results]
+    return df.iloc[indices].copy()
 
 
 def format_result(row: pd.Series) -> str:

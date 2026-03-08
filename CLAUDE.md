@@ -51,6 +51,7 @@ Yahoo position eligibility is **required** — FanGraphs ATC CSVs have no positi
 
 All pitchers share a single P pool (no SP/RP split). Bench slots are allocated proportionally between hitters and pitchers. Position scarcity is driven by greedy assignment.
 Players like Ohtani appear as two separate entries (hitter + pitcher) — this is intentional, matching how the Yahoo league treats them.
+Dual-entry names are disambiguated with "(Batter)"/"(Pitcher)" suffixes by `valuation/names.py`, matching Yahoo's convention. The draft tracker keys on name, so unique names are required.
 Bench allocation can be overridden via `LeagueSettings(bench_hitters=N)` or `--bench-hitters N` on the CLI, calibrated from past draft data.
 Dollar values are rounded to whole integers (largest-remainder method) to match auction bidding rules while preserving exact budget totals.
 
@@ -82,6 +83,7 @@ Dollar values are rounded to whole integers (largest-remainder method) to match 
 - `config/scoring.py`: Frozen dataclasses for batting/pitching scoring weights. Module-level instances (`BATTING_SCORING`, `PITCHING_SCORING`).
 - `config/league.py`: `LeagueSettings` dataclass (teams, budget, roster size, `bench_hitters` default=1 calibrated from draft history). Module-level `LEAGUE` instance.
 - `config/positions.py`: `Position` enum with `FANGRAPHS_POSITION_MAP` for normalizing position strings.
+- `valuation/names.py`: Disambiguates dual-entry players (e.g. Ohtani) by appending "(Batter)"/"(Pitcher)" suffixes.
 
 ## Code Conventions
 
@@ -98,6 +100,7 @@ Dollar values are rounded to whole integers (largest-remainder method) to match 
 - `league.draft_results()` returns `player_id` (int), not `player_key`.
 - `league.player_details(id)` accepts int IDs and supports batch via list: `player_details([id1, id2])`.
 - `eligible_positions` in player details is `[{"position": "OF"}, ...]` — extract with `p["position"]`.
+- Yahoo returns pitcher positions as `"SP"`, `"RP"`, `"SP,RP"` — never just `"P"`. Use `_is_pitcher_only()` from `data/yahoo_positions.py` to check, not `== "P"`.
 - `league.standings()` returns teams in rank order; each entry has `team_key`, `name`, `rank`.
 
 ## Environment Variables

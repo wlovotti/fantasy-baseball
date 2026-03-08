@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from config.positions import Position, parse_positions
-from data.yahoo_positions import merge_yahoo_positions
+from data.yahoo_positions import _is_pitcher_only, merge_yahoo_positions
 
 
 class TestParsePositionsYahooStrings:
@@ -55,6 +55,38 @@ class TestParsePositionsYahooStrings:
         assert Position.UTIL in result
 
 
+class TestIsPitcherOnly:
+    """Test _is_pitcher_only helper."""
+
+    def test_single_p(self):
+        """Exact 'P' is pitcher-only."""
+        assert _is_pitcher_only("P") is True
+
+    def test_sp(self):
+        """'SP' is pitcher-only."""
+        assert _is_pitcher_only("SP") is True
+
+    def test_rp(self):
+        """'RP' is pitcher-only."""
+        assert _is_pitcher_only("RP") is True
+
+    def test_sp_rp(self):
+        """'SP,RP' is pitcher-only."""
+        assert _is_pitcher_only("SP,RP") is True
+
+    def test_util(self):
+        """'Util' is not pitcher-only."""
+        assert _is_pitcher_only("Util") is False
+
+    def test_mixed(self):
+        """'SP,DH' is not pitcher-only."""
+        assert _is_pitcher_only("SP,DH") is False
+
+    def test_hitter_positions(self):
+        """'CF,DH' is not pitcher-only."""
+        assert _is_pitcher_only("CF,DH") is False
+
+
 class TestMergeYahooPositions:
     """Test merge_yahoo_positions merges Yahoo eligibility into hitters."""
 
@@ -96,6 +128,44 @@ class TestMergeYahooPositions:
         unknown = result[result["name"] == "Unknown Player"].iloc[0]
         assert unknown["positions"] == [Position.UTIL]
         assert "Unknown Player" in unmatched
+
+    def test_dual_player_prefers_batter_positions(self):
+        """When Yahoo has both Batter and Pitcher entries, hitter gets batter positions.
+
+        Ohtani appears twice in Yahoo with the same normalized name. The batter
+        entry (Util-only) must be used for hitter matching regardless of row order.
+        """
+        # Pitcher row comes FIRST — previously caused the bug (SP != "P")
+        yahoo_df = pd.DataFrame({
+            "yahoo_name": ["Shohei Ohtani", "Shohei Ohtani", "Mike Trout"],
+            "yahoo_id": [901, 902, 103],
+            "position": ["SP", "Util", "CF,DH"],
+        })
+        hitters_df = pd.DataFrame({
+            "name": ["Shohei Ohtani"],
+            "positions": [[Position.UTIL]],
+            "points": [600.0],
+        })
+        result, _ = merge_yahoo_positions(hitters_df, yahoo_df, score_threshold=80)
+        ohtani = result.iloc[0]
+        # Should get batter positions (Util), NOT pitcher positions (P)
+        assert ohtani["positions"] == [Position.UTIL]
+        assert Position.P not in ohtani["positions"]
+
+    def test_dual_player_batter_first_order(self):
+        """Batter-first row order also correctly assigns batter positions."""
+        yahoo_df = pd.DataFrame({
+            "yahoo_name": ["Shohei Ohtani", "Shohei Ohtani"],
+            "yahoo_id": [901, 902],
+            "position": ["Util", "SP"],
+        })
+        hitters_df = pd.DataFrame({
+            "name": ["Shohei Ohtani"],
+            "positions": [[Position.UTIL]],
+            "points": [600.0],
+        })
+        result, _ = merge_yahoo_positions(hitters_df, yahoo_df, score_threshold=80)
+        assert result.iloc[0]["positions"] == [Position.UTIL]
 
     def test_pitchers_unaffected(self):
         """Pitchers should keep [Position.P] regardless of Yahoo data."""
