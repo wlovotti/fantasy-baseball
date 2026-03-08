@@ -264,8 +264,12 @@ def determine_bid(
     if base <= 0:
         # Still bid $1 to fill roster if team has open slots
         return min(1, team.max_bid) if team.max_bid >= 1 else 0
-    noisy_bid = max(1, round(base + rng.gauss(0, base * noise_std)))
-    return min(noisy_bid, team.max_bid)
+    # User bids exactly at model value; only competitors get noise
+    if team.is_user:
+        bid = base
+    else:
+        bid = max(1, round(base + rng.gauss(0, base * noise_std)))
+    return min(bid, team.max_bid)
 
 
 @dataclass
@@ -299,44 +303,26 @@ class DraftResult:
         return sum(t.total_points for t in comps) / len(comps)
 
 
-def run_one_draft(
-    players: list[SimPlayer],
-    rng: random.Random,
-    noise_std: float = 0.18,
-    league: LeagueSettings = LEAGUE,
-) -> DraftResult:
-    """Simulate a single auction draft.
+def _choose_nomination(team: SimTeam, available: list[SimPlayer]) -> SimPlayer | None:
+    """Choose which player a team nominates.
 
-    Players are nominated in order of projected points (descending).
-    Each team bids; the highest bidder wins (ties broken randomly).
+    Each team nominates the available player they value most highly
+    (our_value for user, yahoo_value for competitors) that they can roster.
     """
-    teams = [
-        SimTeam(team_id=0, is_user=True),
-    ] + [
-        SimTeam(team_id=i, is_user=False)
-        for i in range(1, league.num_teams)
-    ]
-
-    undrafted: list[SimPlayer] = []
-
-    for player in players:
-        bids: list[tuple[int, SimTeam]] = []
-        for team in teams:
-            bid = determine_bid(team, player, rng, noise_std)
-            if bid > 0:
-                bids.append((bid, team))
-
-        if not bids:
-            undrafted.append(player)
+    best: SimPlayer | None = None
+    best_val = -1
+    for player in available:
+        if not team.can_roster(player):
             continue
+        val = player.our_value if team.is_user else player.yahoo_value
+        if val > best_val:
+            best_val = val
+            best = player
+    return best
 
-        # Find max bid, break ties randomly
-        max_bid = max(b[0] for b in bids)
-        top_bidders = [t for b, t in bids if b == max_bid]
-        winner = rng.choice(top_bidders)
-        winner.assign_player(player, max_bid)
 
-    # Fill remaining roster spots with $1 filler players (below-replacement)
+def _fill_remaining_rosters(teams: list[SimTeam]) -> None:
+    """Fill remaining roster spots with $1 filler players (below-replacement)."""
     filler_id = 0
     for team in teams:
         while team.remaining_slots > 0 and team.max_bid >= 1:
@@ -373,6 +359,90 @@ def run_one_draft(
                     assigned = True
             if not assigned:
                 break  # No valid slot for any filler type
+
+
+def run_one_draft(
+    players: list[SimPlayer],
+    rng: random.Random,
+    noise_std: float = 0.18,
+    league: LeagueSettings = LEAGUE,
+) -> DraftResult:
+    """Simulate a single auction draft with realistic auction mechanics.
+
+    Nomination rotates round-robin among teams. Each team nominates the
+    available player they value most. All teams submit their max
+    willingness-to-pay; the winner pays second-highest bid + $1 (floored
+    at $1). If only one bidder, they win at $1.
+    """
+    teams = [
+        SimTeam(team_id=0, is_user=True),
+    ] + [
+        SimTeam(team_id=i, is_user=False)
+        for i in range(1, league.num_teams)
+    ]
+
+    available = list(players)  # mutable copy
+    available_set = set(id(p) for p in available)
+    undrafted: list[SimPlayer] = []
+
+    nom_idx = 0  # round-robin nomination index
+    stale_rounds = 0  # track consecutive full rounds with no nomination
+
+    while available:
+        nominator = teams[nom_idx % league.num_teams]
+        nom_idx += 1
+
+        # Skip teams with full rosters
+        if nominator.remaining_slots <= 0:
+            # If we've cycled through all teams with no one able to nominate, stop
+            if nom_idx % league.num_teams == 0:
+                all_full = all(t.remaining_slots <= 0 for t in teams)
+                if all_full:
+                    break
+            continue
+
+        # Nominator picks the player they want most
+        nominated = _choose_nomination(nominator, available)
+        if nominated is None:
+            stale_rounds += 1
+            if stale_rounds >= league.num_teams:
+                break  # No team can nominate anyone
+            continue
+        stale_rounds = 0
+
+        # Remove from available pool
+        available_set.discard(id(nominated))
+        available = [p for p in available if id(p) in available_set]
+
+        # All teams submit willingness-to-pay (starting bid is $1)
+        bids: list[tuple[int, SimTeam]] = []
+        for team in teams:
+            bid = determine_bid(team, nominated, rng, noise_std)
+            if bid > 0:
+                bids.append((bid, team))
+
+        if not bids:
+            undrafted.append(nominated)
+            continue
+
+        # Sort bids descending; break ties randomly
+        rng.shuffle(bids)  # randomize before stable sort for tie-breaking
+        bids.sort(key=lambda b: b[0], reverse=True)
+
+        winner_bid, winner = bids[0]
+        if len(bids) >= 2:
+            second_bid = bids[1][0]
+            price = min(winner_bid, second_bid + 1)
+        else:
+            price = 1  # no competition, win at $1
+
+        price = max(1, price)
+        winner.assign_player(nominated, price)
+
+    # Any remaining players are undrafted
+    undrafted.extend(available)
+
+    _fill_remaining_rosters(teams)
 
     return DraftResult(teams=teams, undrafted=undrafted)
 

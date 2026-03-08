@@ -31,6 +31,10 @@ Fantasy baseball auction draft toolkit: valuation engine, Yahoo Fantasy API inte
 
 # Interactive player value lookup (shows util_value for Util-only players)
 .venv/bin/python scripts/lookup_player.py
+
+# Monte Carlo draft simulation (evaluates model values vs Yahoo-anchored competitors)
+.venv/bin/python scripts/simulate_draft.py --seed 42 -n 50
+.venv/bin/python scripts/simulate_draft.py --seed 42 -n 50 -v  # verbose per-sim rosters
 ```
 
 ## Architecture
@@ -71,6 +75,12 @@ Dollar values are rounded to whole integers (largest-remainder method) to match 
 
 - `analysis/draft_history.py`: Position spend summaries, hitter/pitcher splits, standings correlation, price drop-off curves, overpay recommendations.
 - `scripts/analyze_past_drafts.py`: CLI that fetches draft results + standings from Yahoo across multiple seasons and prints a full report. Supports `--team` for personalized report, `--output` for CSV export.
+
+### Draft Simulation
+
+- `simulation/engine.py`: Monte Carlo auction draft simulator. User team bids at exact model values; competitor teams bid at Yahoo league values with Gaussian noise. True ascending auction mechanic: winner pays second-highest bid + $1.
+- `scripts/simulate_draft.py`: CLI with `--seed`, `-n`, `--noise`, `-v` options. Reports points advantage, rank distribution, win/top-4 rates, budget utilization.
+- Key design: round-robin nomination (each team nominates their most-wanted player), scarcest-first slot assignment, filler players for unfilled roster spots.
 
 ### Yahoo Integration
 

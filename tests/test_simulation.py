@@ -232,6 +232,96 @@ class TestBidding:
 
 
 # ---------------------------------------------------------------------------
+# Auction mechanic tests
+# ---------------------------------------------------------------------------
+
+class TestAuctionMechanics:
+    """Tests for the ascending auction (second-highest bid + $1) mechanic."""
+
+    def test_winner_pays_second_plus_one(self) -> None:
+        """Winner should pay second-highest bid + $1, not their own bid."""
+        # Create a 2-team league with known bids
+        from simulation.engine import run_one_draft
+        from config.league import LeagueSettings
+
+        # Player valued at $20 by user, $10 by competitor
+        player = _make_player(
+            name="Target",
+            our_value=20,
+            yahoo_value=10,
+            positions=[Position.OF, Position.UTIL],
+        )
+        # Add enough filler to fill rosters
+        fillers = []
+        for i in range(50):
+            fillers.append(_make_player(
+                name=f"Filler{i}",
+                our_value=1,
+                yahoo_value=1,
+                points=100.0,
+                positions=[Position.OF, Position.C, Position.FIRST, Position.SECOND,
+                           Position.THIRD, Position.SS, Position.UTIL],
+            ))
+        for i in range(50):
+            fillers.append(_make_player(
+                name=f"FillerP{i}",
+                player_type="pitcher",
+                our_value=1,
+                yahoo_value=1,
+                points=100.0,
+                positions=[Position.P],
+            ))
+        players = [player] + fillers
+
+        league = LeagueSettings(num_teams=2)
+        rng = random.Random(42)
+        result = run_one_draft(players, rng, noise_std=0.0, league=league)
+
+        # User should win at $11 (second bid $10 + $1), not $20
+        user = result.user_team
+        target_pick = [dp for dp in user.roster if dp.player.name == "Target"]
+        assert len(target_pick) == 1
+        assert target_pick[0].price == 11
+
+    def test_low_competition_pays_two(self) -> None:
+        """When competitor only bids $1 (roster fill), winner pays $2."""
+        from simulation.engine import run_one_draft
+        from config.league import LeagueSettings
+
+        # Player valued at $20 by user, $0 by competitor (bids $1 to fill roster)
+        player = _make_player(
+            name="Sleeper",
+            our_value=20,
+            yahoo_value=0,
+            points=500.0,
+            positions=[Position.OF, Position.UTIL],
+        )
+        fillers = []
+        for i in range(50):
+            fillers.append(_make_player(
+                name=f"F{i}", our_value=1, yahoo_value=1, points=100.0,
+                positions=[Position.OF, Position.C, Position.FIRST, Position.SECOND,
+                           Position.THIRD, Position.SS, Position.UTIL],
+            ))
+        for i in range(50):
+            fillers.append(_make_player(
+                name=f"FP{i}", player_type="pitcher", our_value=1, yahoo_value=1,
+                points=100.0, positions=[Position.P],
+            ))
+        players = [player] + fillers
+
+        league = LeagueSettings(num_teams=2)
+        rng = random.Random(42)
+        result = run_one_draft(players, rng, noise_std=0.0, league=league)
+
+        user = result.user_team
+        sleeper_pick = [dp for dp in user.roster if dp.player.name == "Sleeper"]
+        assert len(sleeper_pick) == 1
+        # Competitor bids $1 (roster fill), so winner pays $1 + $1 = $2
+        assert sleeper_pick[0].price == 2
+
+
+# ---------------------------------------------------------------------------
 # Yahoo parsing tests
 # ---------------------------------------------------------------------------
 
