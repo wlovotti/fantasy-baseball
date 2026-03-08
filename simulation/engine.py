@@ -79,6 +79,7 @@ class SimTeam:
     budget: int = LEAGUE.budget_per_team
     filled_slots: dict[Position | str, int] = field(default_factory=dict)
     roster: list[DraftedPlayer] = field(default_factory=list)
+    bench_hitters: int | None = None  # Max bench hitters (None = no limit)
 
     def __post_init__(self) -> None:
         """Initialize filled slot counts to zero."""
@@ -106,8 +107,17 @@ class SimTeam:
 
     @property
     def total_points(self) -> float:
-        """Sum of projected points across all rostered players."""
-        return sum(dp.player.points for dp in self.roster)
+        """Sum of projected points, excluding bench hitters.
+
+        Bench pitchers count because they can be rotated into starts
+        throughout the week. Bench hitters mostly sit and rarely
+        accrue points, so they are excluded.
+        """
+        return sum(
+            dp.player.points
+            for dp in self.roster
+            if not (dp.slot == "Bench" and dp.player.player_type == "hitter")
+        )
 
     def can_roster(self, player: SimPlayer) -> bool:
         """Check if any legal slot exists for this player."""
@@ -126,13 +136,41 @@ class SimTeam:
         self.budget -= price
         self.roster.append(DraftedPlayer(player=player, slot=slot, price=price))
 
+    @property
+    def bench_hitter_count(self) -> int:
+        """Count how many bench slots are occupied by hitters."""
+        return sum(
+            1 for dp in self.roster
+            if dp.slot == "Bench" and dp.player.player_type == "hitter"
+        )
+
+    @property
+    def bench_pitcher_count(self) -> int:
+        """Count how many bench slots are occupied by pitchers."""
+        return sum(
+            1 for dp in self.roster
+            if dp.slot == "Bench" and dp.player.player_type == "pitcher"
+        )
+
     def _find_slot(self, player: SimPlayer) -> Position | str | None:
-        """Find the best slot for a player using scarcest-first assignment."""
+        """Find the best slot for a player using scarcest-first assignment.
+
+        Respects bench_hitters limit: when set, hitters can only go to bench
+        if the hitter count is below the limit, and pitchers can only go to
+        bench if there's room after reserving slots for hitters.
+        """
         if player.is_pitcher:
             # Pitchers: P > Bench
             if self.filled_slots[Position.P] < SLOT_CAPACITIES[Position.P]:
                 return Position.P
             if self.filled_slots["Bench"] < SLOT_CAPACITIES["Bench"]:
+                if self.bench_hitters is not None:
+                    # Reserve bench slots for hitters up to the limit
+                    bench_cap = SLOT_CAPACITIES["Bench"]
+                    pitcher_bench_cap = bench_cap - self.bench_hitters
+                    if self.bench_pitcher_count < pitcher_bench_cap:
+                        return "Bench"
+                    return None
                 return "Bench"
             return None
 
@@ -145,8 +183,11 @@ class SimTeam:
             elif pos in player.positions:
                 if self.filled_slots[pos] < SLOT_CAPACITIES[pos]:
                     return pos
-        # Fall through to bench
+        # Fall through to bench (respecting hitter limit)
         if self.filled_slots["Bench"] < SLOT_CAPACITIES["Bench"]:
+            if self.bench_hitters is not None:
+                if self.bench_hitter_count >= self.bench_hitters:
+                    return None
             return "Bench"
         return None
 
@@ -383,6 +424,7 @@ def run_one_draft(
     league: LeagueSettings = LEAGUE,
     user_strategy: Callable[[str], int] | None = None,
     on_pick: Callable[[SimPlayer, SimTeam, list[SimPlayer]], None] | None = None,
+    user_bench_hitters: int | None = None,
 ) -> DraftResult:
     """Simulate a single auction draft with realistic auction mechanics.
 
@@ -400,9 +442,11 @@ def run_one_draft(
             for the user team. When None, uses player.our_value.
         on_pick: Optional callback fired after each successful pick.
             Called with (player, winning_team, remaining_available).
+        user_bench_hitters: Max bench hitters for the user team. None means
+            no limit (default behavior). Set to 0 to fill bench with pitchers.
     """
     teams = [
-        SimTeam(team_id=0, is_user=True),
+        SimTeam(team_id=0, is_user=True, bench_hitters=user_bench_hitters),
     ] + [
         SimTeam(team_id=i, is_user=False)
         for i in range(1, league.num_teams)

@@ -66,9 +66,11 @@ def _run_strategy(
         if strategy_name == "static":
             bid_fn = static_strategy(players)
             on_pick_fn = None
+            bench_hitters = None  # default behavior
         elif strategy_name == "personal":
             bid_fn = personal_strategy(player_df, LeagueSettings(bench_hitters=0))
             on_pick_fn = None
+            bench_hitters = 0
         elif strategy_name == "dynamic":
             bid_fn, dynamic_on_pick = dynamic_strategy(player_df, LEAGUE)
 
@@ -83,6 +85,7 @@ def _run_strategy(
                     _cb(player.name)
 
             on_pick_fn = _on_pick_wrapper
+            bench_hitters = 0
         else:
             raise ValueError(f"Unknown strategy: {strategy_name}")
 
@@ -90,6 +93,7 @@ def _run_strategy(
             players, rng, noise_std,
             user_strategy=bid_fn,
             on_pick=on_pick_fn,
+            user_bench_hitters=bench_hitters,
         )
 
         user = result.user_team
