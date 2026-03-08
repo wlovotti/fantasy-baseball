@@ -19,6 +19,7 @@ from config.league import LEAGUE, LeagueSettings
 from data.fangraphs import load_hitters, load_pitchers
 from data.yahoo_positions import fetch_and_merge_positions
 from valuation.auction import calculate_auction_values, format_positions
+from valuation.names import disambiguate_player_names
 from valuation.points import add_points_column
 from yahoo.auth import get_yahoo_auth
 from yahoo.league_client import get_league
@@ -73,8 +74,9 @@ def main(
     click.echo("Fetching and merging Yahoo positions...")
     hitters = fetch_and_merge_positions(hitters, league, threshold=threshold)
 
-    # Combine and calculate points
+    # Combine, disambiguate dual-entry players (e.g. Ohtani), and calculate points
     all_players = pd.concat([hitters, pitchers], ignore_index=True)
+    all_players = disambiguate_player_names(all_players)
     all_players = add_points_column(all_players)
 
     # Build league settings with optional bench override

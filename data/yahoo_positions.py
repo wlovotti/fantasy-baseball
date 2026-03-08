@@ -10,6 +10,13 @@ from config.positions import Position, parse_positions
 
 logger = logging.getLogger(__name__)
 
+_PITCHER_POSITIONS = {"P", "SP", "RP"}
+
+
+def _is_pitcher_only(pos_str: str) -> bool:
+    """Return True if every position in a comma-separated string is a pitcher slot."""
+    return {p.strip() for p in pos_str.split(",")}.issubset(_PITCHER_POSITIONS)
+
 
 def merge_yahoo_positions(
     hitters: pd.DataFrame,
@@ -40,7 +47,7 @@ def merge_yahoo_positions(
     for _, yrow in yahoo_df.iterrows():
         name = yrow["yahoo_name"]
         pos = yrow["position"]
-        if name not in yahoo_pos_map or yahoo_pos_map[name] == "P":
+        if name not in yahoo_pos_map or _is_pitcher_only(yahoo_pos_map[name]):
             yahoo_pos_map[name] = pos
     yahoo_names = list(yahoo_pos_map.keys())
 
