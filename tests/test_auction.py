@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from config.league import LEAGUE
+from config.league import LEAGUE, LeagueSettings
 from config.positions import Position
 from valuation.auction import calculate_auction_values, format_positions
 
@@ -251,6 +251,43 @@ class TestAuctionValues:
         # Player's replacement_level should match catcher replacement level
         catcher_repl = catchers["replacement_level"].iloc[0]
         assert player["replacement_level"] == catcher_repl
+
+
+    def test_draftable_count_capped_to_roster_spots(self):
+        """Draftable players should never exceed roster_size * num_teams."""
+        league = LeagueSettings(num_teams=2, roster_size=5, bench=0, bench_hitters=0)
+        # Create more players than roster spots (10 spots, 20 players)
+        players = []
+        for i in range(12):
+            players.append({
+                "name": f"Hitter {i}",
+                "positions": [Position.OF, Position.UTIL],
+                "points": 400 - i * 10,
+                "player_type": "hitter",
+            })
+        for i in range(12):
+            players.append({
+                "name": f"Pitcher {i}",
+                "positions": [Position.P],
+                "points": 350 - i * 10,
+                "player_type": "pitcher",
+            })
+        df = pd.DataFrame(players)
+        result = calculate_auction_values(df, league=league)
+
+        draftable = result[result["dollar_value"] > 0]
+        max_draftable = league.roster_size * league.num_teams
+        assert len(draftable) <= max_draftable
+        assert draftable["dollar_value"].sum() == league.total_budget
+
+    def test_cap_does_not_apply_when_under_limit(self, valued_pool):
+        """When fewer players have positive VAR than roster spots, all are kept."""
+        # Small pool — 100 players is well under 336 roster spots
+        result = calculate_auction_values(valued_pool)
+        draftable = result[result["dollar_value"] > 0]
+        # All players with positive allocation_var should still be draftable
+        assert len(draftable) > 0
+        assert draftable["dollar_value"].sum() == LEAGUE.total_budget
 
 
 class TestFormatPositions:

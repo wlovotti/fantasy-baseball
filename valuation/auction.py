@@ -156,6 +156,28 @@ def calculate_auction_values(
         axis=1,
     )
 
+    # Cap draftable players to actual roster spots
+    max_draftable = league.roster_size * league.num_teams
+    positive_mask = df["allocation_var"] > 0
+    if positive_mask.sum() > max_draftable:
+        # Keep only the top max_draftable by allocation_var
+        threshold = (
+            df.loc[positive_mask, "allocation_var"]
+            .nlargest(max_draftable)
+            .iloc[-1]
+        )
+        above_threshold = df["allocation_var"] > threshold
+        at_threshold = df["allocation_var"] == threshold
+        needed = max_draftable - above_threshold.sum()
+        # If ties at threshold, keep first `needed` by points (tiebreaker)
+        if at_threshold.sum() > needed:
+            tie_indices = df.loc[at_threshold].nlargest(needed, "points").index
+            keep = above_threshold.copy()
+            keep.loc[tie_indices] = True
+        else:
+            keep = above_threshold | at_threshold
+        df.loc[~keep, "allocation_var"] = 0
+
     # Only players with positive allocation_var are draftable
     total_positive_alloc = df.loc[df["allocation_var"] > 0, "allocation_var"].sum()
     total_budget = league.total_budget
@@ -186,21 +208,44 @@ def calculate_auction_values(
     df["util_value"] = 0
     if hitter_mask.any() and total_positive_alloc > 0:
         util_var = df.loc[hitter_mask, "points"] - pooled_repl
-        util_pos = util_var > 0
+        pitcher_mask = df["player_type"] == "pitcher"
+        pitcher_var = df.loc[pitcher_mask, "var"].clip(lower=0)
+
+        # Combine hitter util_var and pitcher var for unified ranking
+        combined_var = pd.Series(0.0, index=df.index)
+        combined_var.loc[util_var.index] = util_var.clip(lower=0)
+        combined_var.loc[pitcher_var.index] = pitcher_var
+
+        # Cap to max_draftable roster spots
+        positive_combined = combined_var > 0
+        if positive_combined.sum() > max_draftable:
+            util_threshold = (
+                combined_var[positive_combined]
+                .nlargest(max_draftable)
+                .iloc[-1]
+            )
+            above = combined_var > util_threshold
+            at = combined_var == util_threshold
+            needed_util = max_draftable - above.sum()
+            if at.sum() > needed_util:
+                tie_idx = df.loc[at].nlargest(needed_util, "points").index
+                keep_util = above.copy()
+                keep_util.loc[tie_idx] = True
+            else:
+                keep_util = above | at
+            combined_var.loc[~keep_util] = 0
+
+        util_pos = combined_var.loc[hitter_mask] > 0
         if util_pos.any():
-            # Self-consistent denominator: positive util VARs + pitcher VARs
-            pitcher_var_sum = (
-                df.loc[df["player_type"] == "pitcher", "var"].clip(lower=0).sum()
-            )
-            util_total_var = util_var[util_pos].sum() + pitcher_var_sum
-            util_num_draftable = (
-                util_pos.sum()
-                + (df.loc[df["player_type"] == "pitcher", "var"] > 0).sum()
-            )
+            util_var_capped = combined_var.loc[hitter_mask]
+            pitcher_var_sum = combined_var.loc[pitcher_mask].sum()
+            util_total_var = util_var_capped[util_pos].sum() + pitcher_var_sum
+            util_num_draftable = (combined_var > 0).sum()
             util_distributable = total_budget - util_num_draftable
 
             raw_util = (
-                util_var[util_pos] / util_total_var * util_distributable + 1
+                util_var_capped[util_pos] / util_total_var * util_distributable
+                + 1
             )
             df.loc[raw_util.index, "util_value"] = raw_util.round().astype(int)
 
