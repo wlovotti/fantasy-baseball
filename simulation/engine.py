@@ -384,25 +384,24 @@ def _fill_remaining_rosters(teams: list[SimTeam]) -> None:
         while team.remaining_slots > 0 and team.max_bid >= 1:
             filler_id += 1
             assigned = False
-            # Try pitcher filler first if P slots are open
-            if team.filled_slots[Position.P] < SLOT_CAPACITIES[Position.P]:
-                filler = SimPlayer(
-                    name=f"Filler P {filler_id}",
-                    player_type="pitcher",
-                    points=0.0,
-                    positions=[Position.P],
-                    our_value=1,
-                    yahoo_value=1,
-                )
-                if team.can_roster(filler):
-                    team.assign_player(filler, 1)
-                    assigned = True
+            # Try pitcher filler first (P slot or bench)
+            pitcher_filler = SimPlayer(
+                name=f"Filler P {filler_id}",
+                player_type="pitcher",
+                points=0.0,
+                positions=[Position.P],
+                our_value=1,
+                yahoo_value=1,
+            )
+            if team.can_roster(pitcher_filler):
+                team.assign_player(pitcher_filler, 1)
+                assigned = True
             if not assigned:
                 # Try hitter filler — eligible for all hitter positions + Bench
                 all_hitter_pos = [
                     p for p in HITTER_SCARCITY_ORDER if p != Position.UTIL
                 ] + [Position.UTIL]
-                filler = SimPlayer(
+                hitter_filler = SimPlayer(
                     name=f"Filler H {filler_id}",
                     player_type="hitter",
                     points=0.0,
@@ -410,8 +409,8 @@ def _fill_remaining_rosters(teams: list[SimTeam]) -> None:
                     our_value=1,
                     yahoo_value=1,
                 )
-                if team.can_roster(filler):
-                    team.assign_player(filler, 1)
+                if team.can_roster(hitter_filler):
+                    team.assign_player(hitter_filler, 1)
                     assigned = True
             if not assigned:
                 break  # No valid slot for any filler type
@@ -445,10 +444,18 @@ def run_one_draft(
         user_bench_hitters: Max bench hitters for the user team. None means
             no limit (default behavior). Set to 0 to fill bench with pitchers.
     """
+    # Competitors use league-average bench hitters (calibrated from draft
+    # history, default 1). User team uses user_bench_hitters if specified,
+    # otherwise matches the league default.
+    comp_bench_hitters = league.bench_hitters if league.bench_hitters is not None else 1
     teams = [
-        SimTeam(team_id=0, is_user=True, bench_hitters=user_bench_hitters),
+        SimTeam(
+            team_id=0,
+            is_user=True,
+            bench_hitters=user_bench_hitters if user_bench_hitters is not None else comp_bench_hitters,
+        ),
     ] + [
-        SimTeam(team_id=i, is_user=False)
+        SimTeam(team_id=i, is_user=False, bench_hitters=comp_bench_hitters)
         for i in range(1, league.num_teams)
     ]
 
