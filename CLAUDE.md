@@ -35,6 +35,9 @@ Fantasy baseball auction draft toolkit: valuation engine, Yahoo Fantasy API inte
 # Monte Carlo draft simulation (evaluates model values vs Yahoo-anchored competitors)
 .venv/bin/python scripts/simulate_draft.py --seed 42 -n 50
 .venv/bin/python scripts/simulate_draft.py --seed 42 -n 50 -v  # verbose per-sim rosters
+
+# Compare bidding strategies (static vs personal bench allocation vs dynamic revaluation)
+.venv/bin/python scripts/compare_strategies.py --seed 42 -n 50
 ```
 
 ## Architecture
@@ -91,7 +94,7 @@ Dollar values are rounded to whole integers (largest-remainder method) to match 
 
 - `config/scoring.py`: Frozen dataclasses for batting/pitching scoring weights. Module-level instances (`BATTING_SCORING`, `PITCHING_SCORING`).
 - `config/league.py`: `LeagueSettings` dataclass (teams, budget, roster size, `bench_hitters` default=1 calibrated from draft history). Module-level `LEAGUE` instance.
-- `config/positions.py`: `Position` enum with `FANGRAPHS_POSITION_MAP` for normalizing position strings.
+- `config/positions.py`: `Position` enum with `FANGRAPHS_POSITION_MAP` for normalizing position strings. **Gotcha**: `parse_positions("P")` returns `[]` — the map only has `"SP"`/`"RP"`. Handle `"P"` explicitly when loading from player_values.csv.
 - `valuation/names.py`: Disambiguates dual-entry players (e.g. Ohtani) by appending "(Batter)"/"(Pitcher)" suffixes.
 
 ## Code Conventions
