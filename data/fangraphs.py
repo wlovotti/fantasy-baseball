@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import pandas as pd
@@ -84,6 +85,12 @@ def load_hitters(csv_path: str | Path) -> pd.DataFrame:
         df["positions"] = df[pos_col].fillna("DH").apply(parse_positions)
     elif "positions" not in df.columns:
         # Default to Util-only if no position info available
+        warnings.warn(
+            "No position column found in hitter CSV. All hitters will default "
+            "to [Util], which produces inaccurate valuations. Use Yahoo "
+            "positions via fetch_and_merge_positions() for real eligibility.",
+            stacklevel=2,
+        )
         df["positions"] = [[Position.UTIL]] * len(df)
 
     # Fill missing stat columns with 0

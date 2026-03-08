@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""CLI: Generate auction dollar values from FanGraphs projection CSVs."""
+"""CLI: Generate auction values using Yahoo positions + FanGraphs projections.
+
+Fetches real position eligibility from the Yahoo Fantasy API and merges it
+with FanGraphs projections for accurate replacement-level calculations.
+"""
 
 import sys
 from pathlib import Path
@@ -11,8 +15,11 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from data.fangraphs import load_hitters, load_pitchers
+from data.yahoo_positions import fetch_and_merge_positions
 from valuation.auction import calculate_auction_values, format_positions
 from valuation.points import add_points_column
+from yahoo.auth import get_yahoo_auth
+from yahoo.league_client import get_league
 
 
 @click.command()
@@ -24,8 +31,19 @@ from valuation.points import add_points_column
     help="Output CSV path (default: player_values.csv)",
 )
 @click.option("--top", "-n", default=50, help="Number of top players to display")
-def main(hitters_csv: str, pitchers_csv: str, output: str, top: int) -> None:
-    """Generate auction dollar values from FanGraphs ATC projection CSVs.
+@click.option(
+    "--threshold", "-t",
+    default=90,
+    help="Fuzzy match score threshold (0-100, default: 90)",
+)
+def main(
+    hitters_csv: str,
+    pitchers_csv: str,
+    output: str,
+    top: int,
+    threshold: int,
+) -> None:
+    """Generate auction values using Yahoo positions + FanGraphs projections.
 
     HITTERS_CSV: Path to FanGraphs hitter projections CSV.
     PITCHERS_CSV: Path to FanGraphs pitcher projections CSV.
@@ -38,6 +56,13 @@ def main(hitters_csv: str, pitchers_csv: str, output: str, top: int) -> None:
     click.echo("Loading pitcher projections...")
     pitchers = load_pitchers(pitchers_csv)
     click.echo(f"  Loaded {len(pitchers)} pitchers")
+
+    # Fetch Yahoo positions and merge into hitters
+    click.echo("Authenticating with Yahoo...")
+    league = get_league()
+
+    click.echo("Fetching and merging Yahoo positions...")
+    hitters = fetch_and_merge_positions(hitters, league, threshold=threshold)
 
     # Combine and calculate points
     all_players = pd.concat([hitters, pitchers], ignore_index=True)
@@ -55,7 +80,8 @@ def main(hitters_csv: str, pitchers_csv: str, output: str, top: int) -> None:
     for i, (_, row) in enumerate(valued.head(top).iterrows(), 1):
         pos_str = format_positions(row["positions"])
         click.echo(
-            f"{i:<5} {row['name']:<25} {pos_str:<12} {row['points']:>8.1f} ${row['dollar_value']:>6.1f}"
+            f"{i:<5} {row['name']:<25} {pos_str:<12} "
+            f"{row['points']:>8.1f} ${row['dollar_value']:>6.1f}"
         )
 
     # Summary stats
