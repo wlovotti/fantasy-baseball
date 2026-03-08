@@ -22,9 +22,6 @@ Fantasy baseball auction draft toolkit: valuation engine, Yahoo Fantasy API inte
 # Generate auction values (requires Yahoo auth for position eligibility)
 .venv/bin/python scripts/generate_values.py projections/hitters.csv projections/pitchers.csv
 
-# Upload values to Yahoo
-.venv/bin/python scripts/upload_to_yahoo.py player_values.csv
-
 # Run live draft tracker (FastAPI app on localhost:8000)
 .venv/bin/python scripts/run_draft.py player_values.csv
 .venv/bin/python scripts/run_draft.py player_values.csv --resume draft_state.json
@@ -75,7 +72,6 @@ Dollar values are rounded to whole integers (largest-remainder method) to match 
 
 - **Auth** (`yahoo/auth.py`): OAuth2 with token persistence in `oauth2.json`.
 - **Matching** (`yahoo/league_client.py`): Two-pass fuzzy matching (rapidfuzz) to handle NA-status players and dual-eligible players like Ohtani.
-- **Upload** (`yahoo/upload.py`): Pushes dollar values to Yahoo pre-draft interface.
 
 ### Configuration
 
