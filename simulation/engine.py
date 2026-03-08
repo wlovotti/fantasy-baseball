@@ -12,6 +12,7 @@ import random
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from config.league import LEAGUE, LeagueSettings
 from config.positions import Position, parse_positions
@@ -252,15 +253,20 @@ def determine_bid(
     player: SimPlayer,
     rng: random.Random,
     noise_std: float = 0.18,
+    user_strategy: Callable[[str], int] | None = None,
 ) -> int:
     """Determine a team's bid for a player.
 
-    User teams bid based on our_value; competitors bid based on yahoo_value.
+    User teams bid based on our_value (or user_strategy if provided);
+    competitors bid based on yahoo_value.
     Gaussian noise is added with std = noise_std * base_value.
     """
     if not team.can_roster(player):
         return 0
-    base = player.our_value if team.is_user else player.yahoo_value
+    if team.is_user and user_strategy is not None:
+        base = user_strategy(player.name)
+    else:
+        base = player.our_value if team.is_user else player.yahoo_value
     if base <= 0:
         # Still bid $1 to fill roster if team has open slots
         return min(1, team.max_bid) if team.max_bid >= 1 else 0
@@ -303,18 +309,27 @@ class DraftResult:
         return sum(t.total_points for t in comps) / len(comps)
 
 
-def _choose_nomination(team: SimTeam, available: list[SimPlayer]) -> SimPlayer | None:
+def _choose_nomination(
+    team: SimTeam,
+    available: list[SimPlayer],
+    user_strategy: Callable[[str], int] | None = None,
+) -> SimPlayer | None:
     """Choose which player a team nominates.
 
     Each team nominates the available player they value most highly
     (our_value for user, yahoo_value for competitors) that they can roster.
+    When user_strategy is provided, the user team uses strategy values
+    for nomination priority.
     """
     best: SimPlayer | None = None
     best_val = -1
     for player in available:
         if not team.can_roster(player):
             continue
-        val = player.our_value if team.is_user else player.yahoo_value
+        if team.is_user and user_strategy is not None:
+            val = user_strategy(player.name)
+        else:
+            val = player.our_value if team.is_user else player.yahoo_value
         if val > best_val:
             best_val = val
             best = player
@@ -366,6 +381,8 @@ def run_one_draft(
     rng: random.Random,
     noise_std: float = 0.18,
     league: LeagueSettings = LEAGUE,
+    user_strategy: Callable[[str], int] | None = None,
+    on_pick: Callable[[SimPlayer, SimTeam, list[SimPlayer]], None] | None = None,
 ) -> DraftResult:
     """Simulate a single auction draft with realistic auction mechanics.
 
@@ -373,6 +390,16 @@ def run_one_draft(
     available player they value most. All teams submit their max
     willingness-to-pay; the winner pays second-highest bid + $1 (floored
     at $1). If only one bidder, they win at $1.
+
+    Args:
+        players: List of SimPlayer objects available for draft.
+        rng: Random number generator for reproducibility.
+        noise_std: Bid noise standard deviation as fraction of base value.
+        league: League settings controlling team count and roster.
+        user_strategy: Optional callable mapping player name to bid value
+            for the user team. When None, uses player.our_value.
+        on_pick: Optional callback fired after each successful pick.
+            Called with (player, winning_team, remaining_available).
     """
     teams = [
         SimTeam(team_id=0, is_user=True),
@@ -402,7 +429,7 @@ def run_one_draft(
             continue
 
         # Nominator picks the player they want most
-        nominated = _choose_nomination(nominator, available)
+        nominated = _choose_nomination(nominator, available, user_strategy)
         if nominated is None:
             stale_rounds += 1
             if stale_rounds >= league.num_teams:
@@ -417,7 +444,7 @@ def run_one_draft(
         # All teams submit willingness-to-pay (starting bid is $1)
         bids: list[tuple[int, SimTeam]] = []
         for team in teams:
-            bid = determine_bid(team, nominated, rng, noise_std)
+            bid = determine_bid(team, nominated, rng, noise_std, user_strategy)
             if bid > 0:
                 bids.append((bid, team))
 
@@ -438,6 +465,9 @@ def run_one_draft(
 
         price = max(1, price)
         winner.assign_player(nominated, price)
+
+        if on_pick is not None:
+            on_pick(nominated, winner, available)
 
     # Any remaining players are undrafted
     undrafted.extend(available)
