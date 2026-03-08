@@ -34,7 +34,7 @@ def calculate_auction_values(
     df = df.copy()
 
     if replacement_levels is None:
-        replacement_levels = calculate_replacement_levels(df)
+        replacement_levels = calculate_replacement_levels(df, league=league)
 
     # Calculate each player's replacement level (best eligible position)
     df["replacement_level"] = df["positions"].apply(

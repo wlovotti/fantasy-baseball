@@ -14,6 +14,7 @@ import pandas as pd
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from config.league import LEAGUE, LeagueSettings
 from data.fangraphs import load_hitters, load_pitchers
 from data.yahoo_positions import fetch_and_merge_positions
 from valuation.auction import calculate_auction_values, format_positions
@@ -36,12 +37,19 @@ from yahoo.league_client import get_league
     default=90,
     help="Fuzzy match score threshold (0-100, default: 90)",
 )
+@click.option(
+    "--bench-hitters",
+    type=int,
+    default=None,
+    help="Override bench hitters per team (default: proportional estimate)",
+)
 def main(
     hitters_csv: str,
     pitchers_csv: str,
     output: str,
     top: int,
     threshold: int,
+    bench_hitters: int | None,
 ) -> None:
     """Generate auction values using Yahoo positions + FanGraphs projections.
 
@@ -68,9 +76,17 @@ def main(
     all_players = pd.concat([hitters, pitchers], ignore_index=True)
     all_players = add_points_column(all_players)
 
+    # Build league settings with optional bench override
+    if bench_hitters is not None:
+        league_settings = LeagueSettings(bench_hitters=bench_hitters)
+        click.echo(f"Using bench hitters override: {bench_hitters}/team "
+                   f"({bench_hitters * league_settings.num_teams} league-wide)")
+    else:
+        league_settings = LEAGUE
+
     # Calculate auction values
     click.echo("Calculating auction values...")
-    valued = calculate_auction_values(all_players)
+    valued = calculate_auction_values(all_players, league=league_settings)
 
     # Display top players
     click.echo(f"\nTop {top} players by auction value:")

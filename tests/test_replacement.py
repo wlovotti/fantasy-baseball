@@ -3,6 +3,7 @@
 import pandas as pd
 import pytest
 
+from config.league import LeagueSettings
 from config.positions import Position
 from valuation.replacement import calculate_replacement_levels, _find_best_position
 
@@ -127,3 +128,114 @@ class TestReplacementLevelValidation:
         df = pd.DataFrame(players)
         with pytest.raises(ValueError, match="positions"):
             calculate_replacement_levels(df)
+
+
+class TestLeagueSettingsBenchHitters:
+    """Tests for the bench_hitters override on LeagueSettings."""
+
+    def test_default_bench_hitters_is_one(self):
+        """Default LeagueSettings should use calibrated bench_hitters=1."""
+        league = LeagueSettings()
+        assert league.bench_hitters == 1
+
+    def test_bench_hitting_estimate_with_override(self):
+        """Setting bench_hitters should override proportional calculation."""
+        league = LeagueSettings(bench_hitters=1)
+        assert league.bench_hitting_estimate == 1 * league.num_teams
+
+    def test_bench_pitching_estimate_with_override(self):
+        """Bench pitching should be the remainder after bench hitters."""
+        league = LeagueSettings(bench_hitters=1)
+        total_bench = league.bench * league.num_teams
+        assert league.bench_pitching_estimate == total_bench - league.bench_hitting_estimate
+
+    def test_bench_hitters_zero(self):
+        """bench_hitters=0 should allocate all bench to pitchers."""
+        league = LeagueSettings(bench_hitters=0)
+        assert league.bench_hitting_estimate == 0
+        assert league.bench_pitching_estimate == league.bench * league.num_teams
+
+    def test_bench_hitters_equals_bench(self):
+        """bench_hitters=bench should allocate all bench to hitters."""
+        league = LeagueSettings(bench_hitters=4)
+        assert league.bench_hitting_estimate == 4 * league.num_teams
+        assert league.bench_pitching_estimate == 0
+
+    def test_bench_hitters_too_high_raises(self):
+        """bench_hitters > bench should raise ValueError."""
+        with pytest.raises(ValueError, match="bench_hitters must be between"):
+            LeagueSettings(bench_hitters=5)
+
+    def test_bench_hitters_negative_raises(self):
+        """Negative bench_hitters should raise ValueError."""
+        with pytest.raises(ValueError, match="bench_hitters must be between"):
+            LeagueSettings(bench_hitters=-1)
+
+
+class TestReplacementLevelsWithCustomLeague:
+    """Tests that calculate_replacement_levels respects a custom league param."""
+
+    @pytest.fixture
+    def large_player_pool(self):
+        """Player pool large enough that bench allocation affects P replacement.
+
+        With 14 teams * 8 P slots = 112 starting pitchers + up to 56 bench,
+        we need >168 pitchers so bench allocation matters.
+        """
+        players = []
+        for i in range(30):
+            players.append({
+                "name": f"Catcher {i}",
+                "positions": [Position.C, Position.UTIL],
+                "points": 300 - i * 5,
+                "player_type": "hitter",
+            })
+        for i in range(30):
+            players.append({
+                "name": f"First Baseman {i}",
+                "positions": [Position.FIRST, Position.UTIL],
+                "points": 400 - i * 5,
+                "player_type": "hitter",
+            })
+        for i in range(60):
+            players.append({
+                "name": f"Outfielder {i}",
+                "positions": [Position.OF, Position.UTIL],
+                "points": 350 - i * 3,
+                "player_type": "hitter",
+            })
+        for i in range(200):
+            players.append({
+                "name": f"Pitcher {i}",
+                "positions": [Position.P],
+                "points": 300 - i * 1,
+                "player_type": "pitcher",
+            })
+        return pd.DataFrame(players)
+
+    def test_custom_league_changes_replacement_levels(self, large_player_pool):
+        """Replacement levels should differ with different bench allocations."""
+        all_bench_hitting = LeagueSettings(bench_hitters=4)
+        no_bench_hitting = LeagueSettings(bench_hitters=0)
+
+        levels_all_h = calculate_replacement_levels(
+            large_player_pool, league=all_bench_hitting
+        )
+        levels_no_h = calculate_replacement_levels(
+            large_player_pool, league=no_bench_hitting
+        )
+
+        # All bench to pitchers gives more P slots → lower P replacement level
+        assert levels_no_h[Position.P] < levels_all_h[Position.P]
+
+    def test_zero_bench_hitters_raises_pitcher_replacement(self, large_player_pool):
+        """Zero bench hitters means more pitcher bench → lower P replacement."""
+        default_levels = calculate_replacement_levels(large_player_pool)
+
+        no_bench_hitting = LeagueSettings(bench_hitters=0)
+        custom_levels = calculate_replacement_levels(
+            large_player_pool, league=no_bench_hitting
+        )
+
+        # More pitcher bench slots → replacement pitcher is worse (lower points)
+        assert custom_levels[Position.P] <= default_levels[Position.P]
