@@ -28,6 +28,9 @@ Fantasy baseball auction draft toolkit: valuation engine, Yahoo Fantasy API inte
 
 # Analyze past Yahoo drafts to calibrate bench allocation
 .venv/bin/python scripts/analyze_past_drafts.py 2023 2024 2025 --team "BK Whoppers"
+
+# Interactive player value lookup (shows util_value for Util-only players)
+.venv/bin/python scripts/lookup_player.py
 ```
 
 ## Architecture
@@ -47,6 +50,7 @@ FanGraphs ATC CSVs
 Yahoo position eligibility is **required** — FanGraphs ATC CSVs have no position column, so without Yahoo data all hitters default to Util and valuations are wildly inaccurate. A validation guard in `replacement.py` raises `ValueError` if >50% of hitters are Util-only.
 
 All pitchers share a single P pool (no SP/RP split). Bench slots are allocated proportionally between hitters and pitchers. Position scarcity is driven by greedy assignment.
+Players like Ohtani appear as two separate entries (hitter + pitcher) — this is intentional, matching how the Yahoo league treats them.
 Bench allocation can be overridden via `LeagueSettings(bench_hitters=N)` or `--bench-hitters N` on the CLI, calibrated from past draft data.
 Dollar values are rounded to whole integers (largest-remainder method) to match auction bidding rules while preserving exact budget totals.
 

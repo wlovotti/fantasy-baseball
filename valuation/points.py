@@ -2,7 +2,12 @@
 
 import pandas as pd
 
-from config.scoring import BATTING_SCORING, PITCHING_SCORING, BattingScoring, PitchingScoring
+from config.scoring import (
+    BATTING_SCORING,
+    BattingScoring,
+    PITCHING_SCORING,
+    PitchingScoring,
+)
 
 
 def calculate_hitter_points(
@@ -60,7 +65,6 @@ def calculate_pitcher_points(
         + row.get("so", 0) * scoring.strikeout
         + row.get("h_allowed", 0) * scoring.hit_allowed
         + row.get("bb_allowed", 0) * scoring.walk_allowed
-        + row.get("hbp_allowed", 0) * scoring.hbp_allowed
         + row.get("qs", 0) * scoring.quality_start
         + row.get("cg", 0) * scoring.complete_game
         + row.get("sho", 0) * scoring.shutout

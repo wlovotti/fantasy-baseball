@@ -42,7 +42,7 @@ def sample_pitcher():
         "so": 220,
         "h_allowed": 150,
         "bb_allowed": 50,
-        "hbp_allowed": 5,
+
         "qs": 20,
         "cg": 2,
         "sho": 1,
@@ -79,13 +79,13 @@ class TestHitterPoints:
     def test_basic_calculation(self, sample_hitter):
         """Verify points calculation for a sample hitter."""
         points = calculate_hitter_points(sample_hitter)
-        # Manual: 100*2.5 + 30*5 + 5*7.5 + 40*10 + 110*2 + 115*2
-        #       + 80*2.5 + 5*2.5 + 15*5 + 3*(-2.5) + 120*(-1)
+        # Manual: 100*1 + 30*2 + 5*3 + 40*4 + 110*2 + 115*2
+        #       + 80*1 + 5*1 + 15*2.5 + 3*(-1) + 120*(-1)
         expected = (
-            100 * 2.5 + 30 * 5.0 + 5 * 7.5 + 40 * 10.0
+            100 * 1.0 + 30 * 2.0 + 5 * 3.0 + 40 * 4.0
             + 110 * 2.0 + 115 * 2.0
-            + 80 * 2.5 + 5 * 2.5
-            + 15 * 5.0 + 3 * (-2.5) + 120 * (-1.0)
+            + 80 * 1.0 + 5 * 1.0
+            + 15 * 2.5 + 3 * (-1.0) + 120 * (-1.0)
         )
         assert points == pytest.approx(expected)
 
@@ -102,7 +102,7 @@ class TestHitterPoints:
         """Missing stat columns should be treated as 0."""
         row = pd.Series({"single": 50, "hr": 10})
         points = calculate_hitter_points(row)
-        assert points == 50 * 2.5 + 10 * 10.0
+        assert points == 50 * 1.0 + 10 * 4.0
 
     def test_points_are_positive_for_good_hitter(self, sample_hitter):
         """A good hitter should have positive points."""
@@ -116,9 +116,9 @@ class TestPitcherPoints:
         """Verify points calculation for a sample starter."""
         points = calculate_pitcher_points(sample_pitcher)
         expected = (
-            200 * 3.0 + 15 * 4.5 + 7 * (-4.5) + 0 * 7.0 + 0 * 5.5
-            + 60 * (-2.0) + 220 * 1.5 + 150 * (-1.0) + 50 * (-1.0)
-            + 5 * (-1.0) + 20 * 3.0 + 2 * 5.0 + 1 * 5.0 + 0 * (-2.0)
+            200 * 1.0 + 15 * 4.5 + 7 * (-2.0) + 0 * 7.0 + 0 * 5.5
+            + 60 * (-1.0) + 220 * 1.2 + 150 * (-0.25) + 50 * (-0.35)
+            + 20 * 5.0 + 2 * 7.0 + 1 * 10.0 + 0 * (-2.0)
         )
         assert points == pytest.approx(expected)
 
@@ -136,7 +136,7 @@ class TestPitcherPoints:
         holder = pd.Series({
             "ip": 60, "w": 3, "l": 2, "sv": 0, "hld": 25,
             "er": 15, "so": 70, "h_allowed": 40, "bb_allowed": 15,
-            "hbp_allowed": 2, "qs": 0, "cg": 0, "sho": 0, "bs": 2,
+ "qs": 0, "cg": 0, "sho": 0, "bs": 2,
         })
         points = calculate_pitcher_points(holder)
         assert points > 0
