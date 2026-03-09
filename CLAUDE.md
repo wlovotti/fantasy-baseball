@@ -24,7 +24,7 @@ Fantasy baseball auction draft toolkit: valuation engine, Yahoo Fantasy API inte
 
 # Run live draft tracker (FastAPI app on localhost:8000)
 .venv/bin/python scripts/run_draft.py player_values.csv
-.venv/bin/python scripts/run_draft.py player_values.csv --resume draft_state.json
+.venv/bin/python scripts/run_draft.py player_values.csv --resume
 
 # Analyze past Yahoo drafts to calibrate bench allocation
 .venv/bin/python scripts/analyze_past_drafts.py 2023 2024 2025 --team "BK Whoppers"
@@ -56,7 +56,7 @@ FanGraphs ATC CSVs
 
 Yahoo position eligibility is **required** — FanGraphs ATC CSVs have no position column, so without Yahoo data all hitters default to Util and valuations are wildly inaccurate. A validation guard in `replacement.py` raises `ValueError` if >50% of hitters are Util-only.
 
-All pitchers share a single P pool (no SP/RP split). Position scarcity is driven by projected-draft replacement levels: a realistic drafted pool is built respecting all roster constraints (position slots, Util, bench), then each position's replacement level is the minimum points among drafted players eligible at that position. Multi-position players are assigned to their scarcest position for pool construction but count toward all positions for replacement level calculation.
+All pitchers share a single P pool (no SP/RP split). Position scarcity is driven by projected-draft replacement levels: a realistic drafted pool is built respecting all roster constraints (position slots, Util, bench), then each position's replacement level is the minimum points among drafted players assigned to that position. Multi-position players are assigned to their scarcest position and count toward only that position for replacement level calculation (except Util, where any drafted hitter counts).
 Players like Ohtani appear as two separate entries (hitter + pitcher) — this is intentional, matching how the Yahoo league treats them.
 Dual-entry names are disambiguated with "(Batter)"/"(Pitcher)" suffixes by `valuation/names.py`, matching Yahoo's convention. The draft tracker keys on name, so unique names are required.
 Dollar values are rounded to whole integers (largest-remainder method) to match auction bidding rules while preserving exact budget totals.
