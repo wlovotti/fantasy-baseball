@@ -241,6 +241,7 @@ header h1 {
 #sidebar { display: flex; flex-direction: column; gap: 16px; }
 
 #team-budgets,
+#tier-depletion,
 #recent-picks {
     background: var(--surface);
     border-radius: 8px;
@@ -248,6 +249,7 @@ header h1 {
 }
 
 #team-budgets h2,
+#tier-depletion h2,
 #recent-picks h2 {
     font-size: 1rem;
     margin-bottom: 8px;
@@ -273,3 +275,49 @@ header h1 {
 }
 
 .pick-row .pick-price { color: var(--primary); font-weight: 600; }
+
+/* Tier Depletion */
+.collapsible-header {
+    cursor: pointer;
+    user-select: none;
+}
+
+.collapsible-header:hover { color: var(--accent); }
+
+.tier-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+    text-align: center;
+}
+
+.tier-table th {
+    padding: 4px 6px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+}
+
+.tier-table td {
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--border);
+}
+
+.tier-table .tier-pos {
+    text-align: left;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.tier-table .depleted {
+    background: rgba(244, 67, 54, 0.3);
+    color: var(--negative);
+    font-weight: 600;
+}
+
+.tier-table .scarce {
+    background: rgba(255, 193, 7, 0.2);
+    color: #ffc107;
+    font-weight: 600;
+}

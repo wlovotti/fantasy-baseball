@@ -153,6 +153,9 @@ function updateUI(state) {
   // Team budgets
   renderTeamBudgets(state.teams);
 
+  // Tier depletion
+  if (state.tier_counts) renderTierDepletion(state.tier_counts);
+
   // Recent picks
   renderRecentPicks(state.recent_picks);
 }
@@ -222,6 +225,42 @@ function renderRecentPicks(picks) {
     </div>`
     )
     .join("");
+}
+
+/* --- Tier Depletion --- */
+
+function renderTierDepletion(tierCounts) {
+  const container = document.getElementById("tier-depletion-grid");
+  const tiers = tierCounts.tiers;
+  const positions = tierCounts.positions;
+
+  let html = '<table class="tier-table"><thead><tr><th>Pos</th>';
+  tiers.forEach((t) => { html += `<th>${t}</th>`; });
+  html += "</tr></thead><tbody>";
+
+  Object.keys(positions).forEach((pos) => {
+    html += `<tr><td class="tier-pos">${pos}</td>`;
+    positions[pos].forEach((count) => {
+      const cls = count === 0 ? "depleted" : count <= 2 ? "scarce" : "";
+      html += `<td class="${cls}">${count}</td>`;
+    });
+    html += "</tr>";
+  });
+
+  html += "</tbody></table>";
+  container.innerHTML = html;
+}
+
+function toggleTiers() {
+  const grid = document.getElementById("tier-depletion-grid");
+  const icon = document.getElementById("tier-toggle-icon");
+  if (grid.style.display === "none") {
+    grid.style.display = "block";
+    icon.textContent = "▼";
+  } else {
+    grid.style.display = "none";
+    icon.textContent = "▶";
+  }
 }
 
 /* --- Table Filtering --- */

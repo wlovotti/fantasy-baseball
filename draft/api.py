@@ -15,6 +15,10 @@ from draft.tracker import record_pick, undo_last_pick
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+TIER_BOUNDARIES = [30, 20, 10, 5, 1]
+TIER_LABELS = ["$30+", "$20-29", "$10-19", "$5-9", "$1-4"]
+TIER_POSITIONS = ["C", "1B", "2B", "3B", "SS", "OF", "P"]
+
 app = FastAPI(title="Fantasy Baseball Draft Tracker")
 app.mount("/static", StaticFiles(directory=PROJECT_ROOT / "static"), name="static")
 templates = Jinja2Templates(directory=PROJECT_ROOT / "templates")
@@ -193,6 +197,52 @@ async def team_detail(team_id: int):
     }
 
 
+def _build_tier_counts(state: DraftState) -> dict:
+    """Build tier depletion counts for remaining players by position.
+
+    Counts undrafted players in each value tier for each position.
+    Multi-position players count in each eligible position. Util is excluded.
+    Pitchers (any position containing 'P' that isn't a hitter position) pool under 'P'.
+
+    Args:
+        state: Current DraftState with remaining player pool.
+
+    Returns:
+        Dict with 'tiers' (list of labels) and 'positions' (dict mapping
+        position to list of counts per tier).
+    """
+    counts: dict[str, list[int]] = {pos: [0] * len(TIER_BOUNDARIES) for pos in TIER_POSITIONS}
+
+    for player in state.players.values():
+        value = player.original_value
+        if value < 1:
+            continue
+
+        # Determine which tier this player falls into
+        tier_idx = None
+        for i, boundary in enumerate(TIER_BOUNDARIES):
+            if value >= boundary:
+                tier_idx = i
+                break
+        if tier_idx is None:
+            continue
+
+        # Map player positions to tier positions
+        mapped_positions: set[str] = set()
+        for pos in player.positions:
+            if pos == "Util":
+                continue
+            if pos in TIER_POSITIONS:
+                mapped_positions.add(pos)
+            elif pos in ("SP", "RP"):
+                mapped_positions.add("P")
+
+        for pos in mapped_positions:
+            counts[pos][tier_idx] += 1
+
+    return {"tiers": TIER_LABELS, "positions": counts}
+
+
 def _state_summary(state: DraftState) -> dict:
     """Build a summary dict of the current draft state.
 
@@ -237,6 +287,7 @@ def _state_summary(state: DraftState) -> dict:
             }
             for tid, t in state.teams.items()
         },
+        "tier_counts": _build_tier_counts(state),
         "recent_picks": [
             {
                 "player_name": p.player_name,

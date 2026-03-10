@@ -72,6 +72,7 @@ Dollar values are rounded to whole integers (largest-remainder method) to match 
 - **State** (`draft/state.py`): Pydantic models — `DraftState`, `PlayerValue`, `TeamState`, `DraftPick`. Auto-saves to `draft_state.json`. Snapshot-based undo (last 50 in memory).
 - **Revaluation** (`draft/tracker.py`): Recalculates auction values on remaining player pool after each pick using the same VAR method.
 - **API** (`draft/api.py`): FastAPI routes (`/api/players`, `/api/draft`, `/api/undo`, `/api/state`, `/api/team/{team_id}`).
+- **Tier Depletion** (`draft/api.py`): `_build_tier_counts()` counts remaining players by position × value tier ($30+, $20-29, $10-19, $5-9, $1-4). Multi-position players count in each eligible position; SP/RP pool under P; Util excluded. Embedded in `_state_summary` response.
 - **Frontend**: `templates/draft.html` + `static/draft.js` + `static/style.css`.
 
 ### Draft History Analysis
