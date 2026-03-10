@@ -28,11 +28,13 @@ def _fetch_yahoo_team_names(my_team_name: str) -> tuple[dict[int, str], int]:
 
     team_names = {}
     my_team_id = 0
-    for i, team in enumerate(teams_data, 1):
-        name = team["name"]
-        team_names[i] = name
+    # teams_data is a dict keyed by team_key, each value has team_id and name
+    for team_info in teams_data.values():
+        tid = int(team_info["team_id"])
+        name = team_info["name"]
+        team_names[tid] = name
         if name.lower() == my_team_name.lower():
-            my_team_id = i
+            my_team_id = tid
 
     if my_team_id == 0:
         click.echo(f"  Warning: '{my_team_name}' not found in league teams.")
