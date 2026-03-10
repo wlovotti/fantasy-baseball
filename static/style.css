@@ -37,15 +37,6 @@ header h1 {
     color: var(--primary);
 }
 
-#inflation-badge {
-    background: var(--surface-alt);
-    padding: 4px 12px;
-    border-radius: 4px;
-    font-size: 0.9rem;
-}
-
-#inflation-value { color: var(--accent); font-weight: bold; }
-
 #draft-stats {
     display: flex;
     gap: 16px;
@@ -142,6 +133,17 @@ header h1 {
 .autocomplete-item .pos { color: var(--text-muted); }
 .autocomplete-item .val { color: var(--accent); }
 
+.autocomplete-item.add-player-option {
+    border-top: 1px solid var(--border);
+    color: var(--accent);
+    font-style: italic;
+}
+
+.autocomplete-item.add-player-option .val {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
 .btn {
     padding: 8px 16px;
     border: none;
@@ -166,10 +168,39 @@ header h1 {
 
 .btn-secondary:hover { background: var(--border); }
 
+.btn-sm {
+    padding: 3px 8px;
+    font-size: 0.75rem;
+    background: var(--surface-alt);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.btn-sm:hover { background: var(--border); }
+
+.btn-save {
+    background: var(--positive);
+    color: white;
+    border-color: var(--positive);
+}
+
+.btn-danger {
+    background: transparent;
+    color: var(--negative);
+    border-color: var(--negative);
+}
+
+.btn-danger:hover {
+    background: var(--negative);
+    color: white;
+}
+
 /* Main Grid */
 .main-grid {
     display: grid;
-    grid-template-columns: 1fr 320px;
+    grid-template-columns: 1fr 350px;
     gap: 16px;
 }
 
@@ -233,15 +264,12 @@ header h1 {
 
 #player-table tr:hover { background: rgba(233, 69, 96, 0.08); }
 
-.val-up { color: var(--positive); }
-.val-down { color: var(--negative); }
-.val-neutral { color: var(--text-muted); }
-
 /* Sidebar */
 #sidebar { display: flex; flex-direction: column; gap: 16px; }
 
 #team-budgets,
 #tier-depletion,
+#position-slots,
 #recent-picks {
     background: var(--surface);
     border-radius: 8px;
@@ -250,9 +278,20 @@ header h1 {
 
 #team-budgets h2,
 #tier-depletion h2,
+#position-slots h2,
 #recent-picks h2 {
     font-size: 1rem;
     margin-bottom: 8px;
+}
+
+.team-budget-header {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0 4px;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
 }
 
 .team-budget-row {
@@ -265,6 +304,23 @@ header h1 {
 
 .team-budget-row .budget { color: var(--accent); }
 .team-budget-row .roster-count { color: var(--text-muted); }
+.team-budget-row .projected-value { color: var(--positive); font-size: 0.78rem; }
+
+.team-budget-row.my-team {
+    border-left: 3px solid var(--accent);
+    padding-left: 6px;
+    background: rgba(0, 210, 255, 0.05);
+}
+
+.team-name-link {
+    cursor: pointer;
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.team-name-link:hover {
+    text-decoration: underline;
+}
 
 .pick-row {
     padding: 4px 0;
@@ -276,7 +332,7 @@ header h1 {
 
 .pick-row .pick-price { color: var(--primary); font-weight: 600; }
 
-/* Tier Depletion */
+/* Tier Depletion / Position Slots */
 .collapsible-header {
     cursor: pointer;
     user-select: none;
@@ -308,6 +364,10 @@ header h1 {
     text-align: left;
     font-weight: 600;
     color: var(--accent);
+    white-space: nowrap;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .tier-table .depleted {
@@ -321,3 +381,139 @@ header h1 {
     color: #ffc107;
     font-weight: 600;
 }
+
+.tier-table tr.my-team {
+    border-left: 3px solid var(--accent);
+    background: rgba(0, 210, 255, 0.05);
+}
+
+.tier-table tr.opponents-row {
+    border-top: 2px solid var(--border);
+    font-weight: 600;
+}
+
+.tier-table tr.opponents-row .tier-pos {
+    color: var(--text-muted);
+}
+
+.pos-slots-table {
+    font-size: 0.72rem;
+}
+
+.pos-slots-table .tier-pos {
+    font-size: 0.7rem;
+}
+
+/* Modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 700px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    position: relative;
+}
+
+.modal-content h2 {
+    font-size: 1.1rem;
+    margin-bottom: 12px;
+    color: var(--primary);
+}
+
+.modal-close {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+
+.modal-close:hover { color: var(--text); }
+
+.modal-stats {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.modal-stats strong { color: var(--accent); }
+
+.roster-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.roster-table th {
+    padding: 6px 8px;
+    text-align: left;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+}
+
+.roster-table td {
+    padding: 5px 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.roster-table .action-btns {
+    display: flex;
+    gap: 4px;
+}
+
+.price-edit-input {
+    width: 60px;
+    background: var(--bg);
+    border: 1px solid var(--accent);
+    color: var(--text);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.85rem;
+}
+
+/* Checkbox grid for position selection */
+.checkbox-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    margin-top: 4px;
+}
+
+.checkbox-grid label {
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    text-transform: none;
+}
+
+.checkbox-grid input[type="checkbox"] {
+    accent-color: var(--accent);
+}
+
+.text-muted { color: var(--text-muted); }

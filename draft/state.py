@@ -3,7 +3,7 @@
 import json
 import copy
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel
 
@@ -30,6 +30,8 @@ class DraftPick(BaseModel):
     price: int
     team_id: int
     pick_number: int
+    assigned_position: str = ""
+    player_snapshot: str = ""  # JSON of PlayerValue at time of draft, for restore on remove
 
 
 class TeamState(BaseModel):
@@ -65,30 +67,22 @@ class DraftState(BaseModel):
     snapshots: List[str] = []  # JSON strings of previous states for undo
     total_roster_slots: int = 24
     budget_per_team: int = 260
+    my_team_id: int = 0
+    original_values_map: Dict[str, float] = {}
 
-    @property
-    def inflation_factor(self) -> float:
-        """Current inflation/deflation factor.
 
-        Ratio of remaining spendable dollars to sum of original values
-        of remaining players. >1 means inflation (spend more), <1 means
-        deflation (bargains available).
-        """
-        remaining_players = {
-            k: v for k, v in self.players.items() if v.current_value > 0
-        }
-        if not remaining_players:
-            return 1.0
-
-        remaining_original_value = sum(p.original_value for p in remaining_players.values())
-        if remaining_original_value <= 0:
-            return 1.0
-
-        total_spendable = sum(
-            max(0, t.remaining_budget - (self.total_roster_slots - t.roster_size))
-            for t in self.teams.values()
-        )
-        return total_spendable / remaining_original_value
+# Roster slot configuration for position assignment
+ROSTER_CONFIG = {
+    "C": 1,
+    "1B": 1,
+    "2B": 1,
+    "3B": 1,
+    "SS": 1,
+    "OF": 4,
+    "Util": 2,
+    "P": 8,
+    "BN": 4,
+}
 
 
 def initialize_state(
@@ -96,6 +90,8 @@ def initialize_state(
     num_teams: int = 14,
     budget: int = 260,
     roster_slots: int = 24,
+    team_names: Optional[Dict[int, str]] = None,
+    my_team_id: int = 0,
 ) -> DraftState:
     """Initialize draft state from a player values CSV.
 
@@ -105,6 +101,9 @@ def initialize_state(
         num_teams: Number of teams in the league.
         budget: Auction budget per team.
         roster_slots: Total roster spots per team.
+        team_names: Optional mapping of team_id -> team name. If None, uses
+            "Team 1", "Team 2", etc.
+        my_team_id: ID of the user's team (for highlighting in the UI).
 
     Returns:
         Initialized DraftState ready for drafting.
@@ -113,6 +112,7 @@ def initialize_state(
 
     df = pd.read_csv(values_csv)
     players = {}
+    original_values_map = {}
     for _, row in df.iterrows():
         name = row["name"]
         pos_str = str(row.get("positions", ""))
@@ -130,17 +130,20 @@ def initialize_state(
             allocation_var=float(row.get("allocation_var", 0)),
             util_value=float(row.get("util_value", 0)),
         )
+        original_values_map[name] = dollar_val
 
-    teams = {
-        i: TeamState(team_id=i, name=f"Team {i}", budget=budget)
-        for i in range(1, num_teams + 1)
-    }
+    teams = {}
+    for i in range(1, num_teams + 1):
+        name = team_names[i] if team_names and i in team_names else f"Team {i}"
+        teams[i] = TeamState(team_id=i, name=name, budget=budget)
 
     return DraftState(
         players=players,
         teams=teams,
         total_roster_slots=roster_slots,
         budget_per_team=budget,
+        my_team_id=my_team_id,
+        original_values_map=original_values_map,
     )
 
 
