@@ -9,11 +9,8 @@
 <body>
     <header>
         <h1>Draft Tracker</h1>
-        <div id="inflation-badge">
-            Inflation: <span id="inflation-value">1.000</span>x
-        </div>
         <div id="draft-stats">
-            <span>Players left: <strong id="players-remaining">-</strong></span>
+            <span>Picks left: <strong id="picks-remaining">-</strong></span>
             <span>Picks made: <strong id="picks-made">-</strong></span>
         </div>
     </header>
@@ -68,9 +65,7 @@
                                 <th>Pos</th>
                                 <th>Team</th>
                                 <th>Pts</th>
-                                <th>Orig $</th>
-                                <th>Curr $</th>
-                                <th>+/-</th>
+                                <th>Value</th>
                             </tr>
                         </thead>
                         <tbody id="player-tbody"></tbody>
@@ -84,6 +79,14 @@
                 <section id="team-budgets">
                     <h2>Team Budgets</h2>
                     <div id="team-budget-list"></div>
+                </section>
+
+                <!-- Position Slots -->
+                <section id="position-slots">
+                    <h2 class="collapsible-header" onclick="togglePositionSlots()">
+                        Position Slots <span id="pos-slots-toggle-icon">▼</span>
+                    </h2>
+                    <div id="position-slots-grid"></div>
                 </section>
 
                 <!-- Tier Depletion -->
@@ -103,6 +106,59 @@
         </div>
     </div>
 
+    <!-- Team Roster Modal -->
+    <div id="team-roster-modal" class="modal-overlay" style="display:none">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeTeamRosterModal()">&times;</button>
+            <div id="team-roster-body"></div>
+        </div>
+    </div>
+
+    <!-- Add Player Modal -->
+    <div id="add-player-modal" class="modal-overlay" style="display:none">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeAddPlayerModal()">&times;</button>
+            <h2>Add Unknown Player</h2>
+            <form id="add-player-form">
+                <div class="form-group">
+                    <label for="add-player-name">Player Name</label>
+                    <input type="text" id="add-player-name" required>
+                </div>
+                <div class="form-group">
+                    <label>Positions</label>
+                    <div class="checkbox-grid">
+                        <label><input type="checkbox" name="add-pos" value="C"> C</label>
+                        <label><input type="checkbox" name="add-pos" value="1B"> 1B</label>
+                        <label><input type="checkbox" name="add-pos" value="2B"> 2B</label>
+                        <label><input type="checkbox" name="add-pos" value="3B"> 3B</label>
+                        <label><input type="checkbox" name="add-pos" value="SS"> SS</label>
+                        <label><input type="checkbox" name="add-pos" value="OF"> OF</label>
+                        <label><input type="checkbox" name="add-pos" value="SP"> SP</label>
+                        <label><input type="checkbox" name="add-pos" value="RP"> RP</label>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="add-player-price">Price ($)</label>
+                        <input type="number" id="add-player-price" min="0" max="260" value="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="add-player-team">Team</label>
+                        <select id="add-player-team">
+                            {% for tid, team in teams.items() %}
+                            <option value="{{ tid }}">{{ team.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">Add &amp; Draft</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const MY_TEAM_ID = {{ my_team_id }};
+    </script>
     <script src="/static/draft.js"></script>
 </body>
 </html>

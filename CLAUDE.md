@@ -25,6 +25,8 @@ Fantasy baseball auction draft toolkit: valuation engine, Yahoo Fantasy API inte
 # Run live draft tracker (FastAPI app on localhost:8000)
 .venv/bin/python scripts/run_draft.py player_values.csv
 .venv/bin/python scripts/run_draft.py player_values.csv --resume
+.venv/bin/python scripts/run_draft.py player_values.csv --no-yahoo  # skip Yahoo team names
+.venv/bin/python scripts/run_draft.py player_values.csv --my-team "BK Whoppers"  # set your team
 
 # Analyze past Yahoo drafts to calibrate bench allocation
 .venv/bin/python scripts/analyze_past_drafts.py 2023 2024 2025 --team "BK Whoppers"
@@ -69,10 +71,12 @@ Dollar values are rounded to whole integers (largest-remainder method) to match 
 
 ### Draft Tracker
 
-- **State** (`draft/state.py`): Pydantic models — `DraftState`, `PlayerValue`, `TeamState`, `DraftPick`. Auto-saves to `draft_state.json`. Snapshot-based undo (last 50 in memory).
-- **Revaluation** (`draft/tracker.py`): Recalculates auction values on remaining player pool after each pick using the same VAR method.
-- **API** (`draft/api.py`): FastAPI routes (`/api/players`, `/api/draft`, `/api/undo`, `/api/state`, `/api/team/{team_id}`).
+- **State** (`draft/state.py`): Pydantic models — `DraftState`, `PlayerValue`, `TeamState`, `DraftPick`. Auto-saves to `draft_state.json`. Snapshot-based undo (last 50 in memory). `ROSTER_CONFIG` dict defines position slot counts. `original_values_map` preserves initial dollar values for projected team value calculations.
+- **Tracker** (`draft/tracker.py`): Records picks with scarcest-first position slot assignment. Supports `add_unknown_player()`, `edit_pick_price()`, `remove_pick()`. No revaluation — static original values used throughout.
+- **API** (`draft/api.py`): FastAPI routes (`/api/players`, `/api/draft`, `/api/undo`, `/api/state`, `/api/team/{team_id}`, `/api/player/add`, `/api/pick/{n}/edit`, `/api/pick/{n}/remove`).
 - **Tier Depletion** (`draft/api.py`): `_build_tier_counts()` counts remaining players by position × value tier ($30+, $20-29, $10-19, $5-9, $1-4). Multi-position players count in each eligible position; SP/RP pool under P; Util excluded. Embedded in `_state_summary` response.
+- **Position Slots** (`draft/api.py`): `_build_position_slots()` tracks remaining roster slots per position per team. Shown in collapsible sidebar table.
+- **Startup** (`scripts/run_draft.py`): Fetches Yahoo team names on fresh start (skipped with `--resume` or `--no-yahoo`). `--my-team` sets highlighted team.
 - **Frontend**: `templates/draft.html` + `static/draft.js` + `static/style.css`.
 
 ### Draft History Analysis
@@ -115,6 +119,7 @@ Dollar values are rounded to whole integers (largest-remainder method) to match 
 - `eligible_positions` in player details is `[{"position": "OF"}, ...]` — extract with `p["position"]`.
 - Yahoo returns pitcher positions as `"SP"`, `"RP"`, `"SP,RP"` — never just `"P"`. Use `_is_pitcher_only()` from `data/yahoo_positions.py` to check, not `== "P"`.
 - `league.standings()` returns teams in rank order; each entry has `team_key`, `name`, `rank`.
+- `league.teams()` returns a **dict** keyed by team_key (e.g. `"469.l.56600.t.1"`), not a list. Each value has `team_id` (string), `name`, `managers`, etc.
 
 ## Environment Variables
 

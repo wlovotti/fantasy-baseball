@@ -112,7 +112,7 @@ def main(
     # Export to CSV
     export_cols = ["name", "team", "player_type", "points", "replacement_level",
                    "var", "allocation_var", "dollar_value", "util_value"]
-    export_df = valued[valued["dollar_value"] > 0][
+    export_df = valued[
         [c for c in export_cols if c in valued.columns]
     ].copy()
     export_df["positions"] = valued.loc[export_df.index, "positions"].apply(
